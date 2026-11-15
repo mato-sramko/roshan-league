@@ -75,6 +75,7 @@ export default function TeamBuilder(p: Props) {
     const startFree = inRole(starters, x.role).length < p.rules.slots[x.role];
     const benchFree = inRole(bench, x.role).length < p.rules.bench[x.role];
     if (!startFree && !benchFree) return `No free ${ROLE_LABEL[x.role].toLowerCase()} slot`;
+    if (locked && ins.length >= outs.length) return 'Squads are locked';
     if (perTeam(x.teamId) >= p.rules.maxPerTeam) return `Already ${p.rules.maxPerTeam} from ${x.team}`;
     if (grind && x.price > wallet) return `${x.price - wallet} coins short`;
     return null;
@@ -105,8 +106,8 @@ export default function TeamBuilder(p: Props) {
   }
 
   let problem: string | null = null;
-  const missing = needStart + needBench - all.length;
-  if (missing > 0) problem = `Pick ${missing} more ${missing === 1 ? 'player' : 'players'}.`;
+  const missing = needStart - starters.length;
+  if (missing > 0) problem = `Pick ${missing} more ${missing === 1 ? 'starter' : 'starters'}.`;
   else if (!grind && left < 0) problem = `${-left} coins over budget.`;
   else if (grind && wallet < 0) problem = `${-wallet} coins short.`;
 
@@ -191,8 +192,8 @@ export default function TeamBuilder(p: Props) {
       {p.edit === 'new' && (
         <p className="note">
           {grind
-            ? `You start with ${p.coins} coins. Pick ${needStart} starters and ${needBench} bench players, then earn coins after every tournament and trade up.`
-            : `Pick ${needStart} starters and ${needBench} bench players for ${p.rules.budget.toLocaleString('en')} coins, with at most ${p.rules.maxPerTeam} from one team.`}{' '}
+            ? `You start with ${p.coins} coins. Pick ${needStart} starters, and up to ${needBench} bench players if you like, then earn coins after every tournament and trade up.`
+            : `Pick ${needStart} starters, and up to ${needBench} bench players if you like, for ${p.rules.budget.toLocaleString('en')} coins, with at most ${p.rules.maxPerTeam} from one team.`}{' '}
           {p.liveName ? `${p.liveName} is already under way, so your squad scores from the next match on.` : p.nextName ? `Change it freely until ${p.nextName} starts on ${p.nextStart}.` : ''}
         </p>
       )}
@@ -249,7 +250,8 @@ export default function TeamBuilder(p: Props) {
       <ul className="slots">{group(starters, p.rules.slots, false)}</ul>
       <h2 className="sub">Bench</h2>
       <p className="small muted" style={{ marginTop: -6 }}>
-        A bench player scores only in a tournament where one of your starters in the same role does not play at all.
+        Optional. A bench player scores only in a tournament where one of your starters in the same role does not play at all. Filling an empty
+        bench slot is not a transfer.
       </p>
       <ul className="slots">{group(bench, p.rules.bench, true)}</ul>
 

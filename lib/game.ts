@@ -240,13 +240,15 @@ export type SaveResult =
 
 const fail = (error: string): SaveResult => ({ ok: false, error });
 
-export async function saveSquad(userId: number, mode: Mode, starters: unknown, bench: unknown): Promise<SaveResult> {
+export async function saveSquad(userId: number, mode: Mode, starters: unknown, benchIn: unknown): Promise<SaveResult> {
+  const bench = benchIn ?? [];
   const nStart = ROLES.reduce((a, r) => a + SEASON.slots[r], 0);
   const nBench = ROLES.reduce((a, r) => a + SEASON.bench[r], 0);
-  const okList = (l: unknown, n: number): l is string[] =>
-    Array.isArray(l) && l.length === n && l.every((x) => typeof x === 'string' && x.length < 20);
-  if (!okList(starters, nStart) || !okList(bench, nBench)) {
-    return fail(`Pick ${nStart} starters and ${nBench} bench players.`);
+  // The starting five is required; the bench is optional (up to one per role).
+  const okList = (l: unknown, min: number, max: number): l is string[] =>
+    Array.isArray(l) && l.length >= min && l.length <= max && l.every((x) => typeof x === 'string' && x.length < 20);
+  if (!okList(starters, nStart, nStart) || !okList(bench, 0, nBench)) {
+    return fail(`Pick ${nStart} starters. The bench is optional, up to ${nBench} players.`);
   }
   const want = [...starters, ...bench];
   if (new Set(want).size !== want.length) return fail('Each player can be in your squad only once.');
@@ -280,7 +282,8 @@ export async function saveSquad(userId: number, mode: Mode, starters: unknown, b
       ? await getEditMode(userId, mode, status, events, query)
       : { mode: 'new' as EditMode, freeLeft: 0 };
     if (edit === 'locked') {
-      if (outs.some((o) => !isInactive(o)) || moved.length) {
+      // While locked, only a player who stopped playing can be swapped out, one for one.
+      if (outs.some((o) => !isInactive(o)) || moved.length || ins.length > outs.length) {
         return fail(`Squads are locked while ${status.live!.name} is being played. Only players who stopped playing can be replaced.`);
       }
     }
@@ -291,9 +294,9 @@ export async function saveSquad(userId: number, mode: Mode, starters: unknown, b
     const st = starters.map((id) => byId.get(id)!);
     const bn = bench.map((id) => byId.get(id)!);
     for (const role of ROLES) {
-      if (st.filter((p) => p.role === role).length !== SEASON.slots[role] || bn.filter((p) => p.role === role).length !== SEASON.bench[role]) {
+      if (st.filter((p) => p.role === role).length !== SEASON.slots[role] || bn.filter((p) => p.role === role).length > SEASON.bench[role]) {
         const s = SEASON.slots;
-        return fail(`Starters are ${s.core} cores, ${s.mid} mid and ${s.support} supports; the bench is one of each.`);
+        return fail(`Starters are ${s.core} cores, ${s.mid} mid and ${s.support} supports; the bench holds at most one of each.`);
       }
     }
     const perTeam = new Map<string, number>();
@@ -349,6 +352,7 @@ export async function saveSquad(userId: number, mode: Mode, starters: unknown, b
     for (const i of ins) await open(i, mode === 'grind' ? buyPrice.get(i)! : null);
 
     // Transfers: each player out is one transfer, paired with a player in.
+    // Filling an empty bench slot takes nobody out, so it is not a transfer.
     let penalty = 0;
     let paid = 0;
     const record = rosterRow && edit !== 'free';

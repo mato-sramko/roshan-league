@@ -41,7 +41,7 @@ export default async function Rules() {
 
       <h2>Your squad</h2>
       <p>
-        A squad is {s.slots.core} cores, {s.slots.mid} mid and {s.slots.support} supports, plus a bench of one core, one mid and one support. At most{' '}
+        A squad is {s.slots.core} cores, {s.slots.mid} mid and {s.slots.support} supports, plus an optional bench of up to one core, one mid and one support. At most{' '}
         {s.maxPerTeam} players may come from the same pro team, bench included.
       </p>
       <p>
@@ -60,7 +60,7 @@ export default async function Rules() {
       <p>
         Your squad has to fit the {c.budget.toLocaleString('en')}-coin budget at current prices whenever you make a change. A squad you already own stays
         yours if prices rise. In each window between tournaments you get {c.freeTransfersPerWindow} free transfers; every further one costs{' '}
-        {c.extraTransferPenalty} points. Moving a player between the bench and the starters is free.
+        {c.extraTransferPenalty} points. Moving a player between the bench and the starters is free, and so is filling an empty bench slot; dropping a bench player counts as a transfer.
       </p>
 
       <h2>Grind: coins</h2>
