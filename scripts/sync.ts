@@ -3,7 +3,7 @@
 // so the website host does no work for it.
 //   DATABASE_URL=... npx tsx scripts/sync.ts
 import { syncOnce } from '../lib/opendota';
-import { refreshStandings } from '../lib/game';
+import { refreshStandings, getPlayers } from '../lib/game';
 
 async function main() {
   // Without it the scripts would quietly use a throwaway local database.
@@ -22,6 +22,14 @@ async function main() {
   }
   const rows = await refreshStandings();
   console.log(`done: ${fetched} new matches, ${rows} leaderboard rows`);
+  // Price overview of the buyable list, to spot problems in the log.
+  const list = (await getPlayers()).filter((p) => !p.inactive);
+  const by = (f: (p: (typeof list)[number]) => string) =>
+    Object.entries(list.reduce<Record<string, number>>((a, p) => ((a[f(p)] = (a[f(p)] ?? 0) + 1), a), {})).sort().map(([k, v]) => `${k}:${v}`).join(' ');
+  console.log(`prices: ${list.length} players | ${by((p) => (p.price <= 50 ? '50' : p.price < 100 ? '55-95' : p.price < 150 ? '100-145' : p.price < 200 ? '150-195' : p.price < 250 ? '200-245' : '250-300'))} | top: ${list
+    .slice(0, 8)
+    .map((p) => `${p.name} ${p.price}`)
+    .join(', ')}`);
 }
 
 main()
