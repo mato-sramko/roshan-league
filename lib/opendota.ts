@@ -243,16 +243,16 @@ async function findLeagues(events: Ev[], t: number): Promise<string[]> {
   return found;
 }
 
-// Last season's average points per match for every player, from all top-tier matches in
-// SEASON.priceFrom, in one OpenDota query. Parsed-only stats (wards, stacks, runes, teamfights)
+// Last season's average points per match for every player, from every match of the tier-1
+// tournaments in SEASON.priceFrom, in one OpenDota query. Parsed-only stats (wards, stacks, runes, teamfights)
 // are averaged over parsed matches.
 async function fetchSeasonStats(): Promise<Map<string, SeasonStat>> {
   const from = Math.floor(Date.parse(`${SEASON.priceFrom.from}T00:00:00Z`) / 1000);
   const to = Math.floor(Date.parse(`${SEASON.priceFrom.to}T00:00:00Z`) / 1000) + 86400;
   const fields = Object.keys(SCORING).filter((f) => /^[a-z_]+$/.test(f));
   const sql = `SELECT pm.account_id, COUNT(*) AS n, ${fields.map((f) => `AVG(pm.${f})::float AS ${f}`).join(', ')}
-    FROM player_matches pm JOIN matches m ON m.match_id = pm.match_id JOIN leagues l ON l.leagueid = m.leagueid
-    WHERE l.tier = 'premium' AND m.start_time >= ${from} AND m.start_time < ${to} AND pm.account_id IS NOT NULL
+    FROM player_matches pm JOIN matches m ON m.match_id = pm.match_id
+    WHERE m.leagueid IN (${SEASON.priceFrom.leagues.map(Number).join(',')}) AND m.start_time >= ${from} AND m.start_time < ${to} AND pm.account_id IS NOT NULL
     GROUP BY pm.account_id`;
   const res = await od(`/explorer?sql=${encodeURIComponent(sql)}`);
   if (res?.err) throw new Error(`OpenDota explorer: ${res.err}`);

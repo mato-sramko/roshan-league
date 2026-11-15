@@ -11,9 +11,30 @@ export const SEASON = {
   slots: { core: 2, mid: 1, support: 2 } as Record<Role, number>, // the starting five
   bench: { core: 1, mid: 1, support: 1 } as Record<Role, number>, // play only when a starter's team is not at the tournament
   maxPerTeam: 2, // across the whole squad, bench included
-  // Prices are set once, from the previous season (TI to TI), and stay fixed all season.
-  // Every top-tier (OpenDota "premium") match after TI 2025 up to the last day of TI 2026.
-  priceFrom: { from: '2025-09-15', to: '2026-08-23', label: 'TI 2025 to TI 2026' },
+  // Prices are set once, from the previous season (TI to TI), and stay fixed all season:
+  // every match of that season's tier-1 tournaments, after TI 2025 up to the end of TI 2026.
+  // OpenDota marks only TI as top tier, so the tournaments are listed by league id.
+  priceFrom: {
+    from: '2025-09-15',
+    to: '2026-08-23',
+    label: 'TI 2025 to TI 2026',
+    leagues: [
+      17419, // BLAST Slam IV
+      18863, // FISSURE Playground 2
+      18920, // PGL Wallachia Season 6
+      17420, // BLAST Slam V
+      18988, // DreamLeague Season 27
+      19099, // BLAST Slam VI
+      19269, // DreamLeague Season 28
+      19435, // PGL Wallachia Season 7
+      19422, // ESL One Birmingham 2026
+      19543, // PGL Wallachia Season 8
+      19696, // DreamLeague Season 29
+      19101, // BLAST Slam VII
+      19785, // Esports World Cup 2026
+      19719, // The International 2026
+    ],
+  },
   priceMin: 50,
   priceMax: 300,
   priceMinMatches: 3, // fewer than this last season = priced after their first 3 matches this season
