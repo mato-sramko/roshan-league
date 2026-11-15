@@ -1,0 +1,32 @@
+# Once a day: managers, squads, transfers, leagues and grind income, kept for 30 days, encrypted.
+# Download from the run's page under "Artifacts".
+name: Backup
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsx scripts/backup.ts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # The repository is public, so the file is encrypted before upload. The key is the DATABASE_URL
+      # secret itself. To open a downloaded backup (see README):
+      #   BACKUP_KEY='<connection string>' openssl enc -d -aes-256-cbc -pbkdf2 -in backup.json.enc -out backup.json -pass env:BACKUP_KEY
+      - run: openssl enc -aes-256-cbc -pbkdf2 -salt -in backup.json -out backup.json.enc -pass env:BACKUP_KEY && rm backup.json
+        env:
+          BACKUP_KEY: ${{ secrets.DATABASE_URL }}
+      - uses: actions/upload-artifact@v6
+        with:
+          name: backup
+          path: backup.json.enc
+          retention-days: 30

@@ -1,0 +1,10 @@
+{
+  "name": "Roshan League",
+  "short_name": "Roshan League",
+  "description": "Season-long Dota 2 fantasy",
+  "start_url": "/team",
+  "display": "standalone",
+  "background_color": "#e6eae1",
+  "theme_color": "#16211c",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

@@ -1,0 +1,68 @@
+// Database changes after the first version. Each step runs once, in order,
+// and the number of the last one done is kept in meta.schema_version.
+import type { Q } from './db';
+
+const STEPS: string[] = [
+  // 1: casual and grind modes, the bench, coins, Valve roles, main vs qualifier events
+  `
+  ALTER TABLE events ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'main';
+  ALTER TABLE pro_players ADD COLUMN IF NOT EXISTS valve_role INTEGER;
+  ALTER TABLE rosters ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'casual';
+  ALTER TABLE rosters ADD COLUMN IF NOT EXISTS coins INTEGER;
+  ALTER TABLE rosters DROP CONSTRAINT IF EXISTS rosters_pkey;
+  ALTER TABLE rosters ADD PRIMARY KEY (user_id, mode);
+  ALTER TABLE roster_slots ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'casual';
+  ALTER TABLE roster_slots ADD COLUMN IF NOT EXISTS bench BOOLEAN NOT NULL DEFAULT FALSE;
+  ALTER TABLE roster_slots ADD COLUMN IF NOT EXISTS role TEXT;
+  ALTER TABLE roster_slots ADD COLUMN IF NOT EXISTS buy_price INTEGER;
+  UPDATE roster_slots s SET role = p.role FROM pro_players p WHERE p.account_id = s.account_id AND s.role IS NULL;
+  CREATE INDEX IF NOT EXISTS slots_user_mode ON roster_slots (user_id, mode);
+  ALTER TABLE transfers ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'casual';
+  ALTER TABLE transfers ADD COLUMN IF NOT EXISTS sell_price INTEGER;
+  ALTER TABLE transfers ADD COLUMN IF NOT EXISTS buy_price INTEGER;
+  ALTER TABLE transfers ALTER COLUMN out_account DROP NOT NULL;
+  CREATE TABLE IF NOT EXISTS grind_income (
+    user_id INTEGER NOT NULL,
+    event_key TEXT NOT NULL,
+    rank INTEGER NOT NULL,
+    of_count INTEGER NOT NULL,
+    points REAL NOT NULL,
+    coins INTEGER NOT NULL,
+    ts INTEGER NOT NULL,
+    PRIMARY KEY (user_id, event_key)
+  );
+  `,
+  // 2: stored leaderboards, refreshed by the sync
+  `
+  CREATE TABLE IF NOT EXISTS standings (
+    mode TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    user_id INTEGER NOT NULL,
+    pts REAL NOT NULL,
+    pen REAL NOT NULL,
+    total REAL NOT NULL,
+    coins INTEGER,
+    value INTEGER,
+    PRIMARY KEY (mode, scope, user_id)
+  );
+  CREATE INDEX IF NOT EXISTS standings_board ON standings (mode, scope, total DESC)
+  `,
+];
+
+export async function migrate(tx: <T>(fn: (q: Q) => Promise<T>) => Promise<T>, postgres: boolean): Promise<void> {
+  await tx(async (q) => {
+    // Two servers starting at once must not run the same step twice.
+    if (postgres) await q(`SELECT pg_advisory_xact_lock(827364)`);
+    const row = (await q(`SELECT value FROM meta WHERE key = 'schema_version'`))[0];
+    const done = row ? Number(row.value) : 0;
+    for (let i = done; i < STEPS.length; i++) {
+      for (const stmt of STEPS[i].split(';').map((x) => x.trim()).filter(Boolean)) await q(stmt);
+    }
+    if (done < STEPS.length) {
+      await q(
+        `INSERT INTO meta (key, value) VALUES ('schema_version', $1) ON CONFLICT (key) DO UPDATE SET value = $1`,
+        [String(STEPS.length)],
+      );
+    }
+  });
+}

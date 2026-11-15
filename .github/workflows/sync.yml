@@ -1,0 +1,25 @@
+# Every 30 minutes: new matches, grind income, prices, leaderboards.
+# Needs one repository secret: DATABASE_URL (the Neon connection string).
+name: Sync matches
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+concurrency:
+  group: sync
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsx scripts/sync.ts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENDOTA_API_KEY: ${{ secrets.OPENDOTA_API_KEY }}
