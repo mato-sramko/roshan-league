@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS pro_players (
   team_id TEXT,
   team_name TEXT,
   role TEXT NOT NULL DEFAULT 'core',
-  price INTEGER NOT NULL DEFAULT 150,
+  price INTEGER NOT NULL DEFAULT 50,
   avg_points REAL,
   last_match INTEGER
 );

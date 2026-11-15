@@ -2,7 +2,7 @@
 // Only for trying the site out. Wipes all game data first.
 import { q, now } from './db';
 import { ingestMatch } from './opendota';
-import { recomputePrices, getPlayers, saveSquad, refreshStandings } from './game';
+import { setSeasonPrices, localSeasonStats, getPlayers, saveSquad, refreshStandings } from './game';
 import { SEASON, type Role } from '@/season.config';
 
 function rng(seed: number) {
@@ -90,7 +90,7 @@ export async function seedDemo(managers = 10, keep = false): Promise<{ matches: 
     await refreshStandings();
     return { matches: n, players: 0, managers: 0 };
   }
-  await recomputePrices();
+  await setSeasonPrices(await localSeasonStats());
 
   // A few made-up managers in both modes, so the tables are not empty.
   const pool = (await getPlayers()).filter((p) => !p.inactive);

@@ -11,10 +11,13 @@ export const SEASON = {
   slots: { core: 2, mid: 1, support: 2 } as Record<Role, number>, // the starting five
   bench: { core: 1, mid: 1, support: 1 } as Record<Role, number>, // play only when a starter's team is not at the tournament
   maxPerTeam: 2, // across the whole squad, bench included
+  // Prices are set once, from the previous season (TI to TI), and stay fixed all season.
+  // Every top-tier (OpenDota "premium") match after TI 2025 up to the last day of TI 2026.
+  priceFrom: { from: '2025-09-15', to: '2026-08-23', label: 'TI 2025 to TI 2026' },
   priceMin: 50,
   priceMax: 300,
-  priceDefault: 50, // players without enough matches in recent main tournaments
-  priceMinMatches: 3,
+  priceMinMatches: 3, // fewer than this last season = priced after their first 3 matches this season
+  priceShrink: 5, // each player's average is mixed with this many matches of their role's average
   inactiveAfterDays: 90, // no tracked match for this long = free to replace, cannot be bought
 
   // Casual: one fixed budget for the whole season.
@@ -39,8 +42,7 @@ export const SEASON = {
     incomeRest: 50,
     // A manager who starts late gets the lowest income for every tournament already started.
     lateJoinPerEvent: 50,
-    // Selling: you get what you paid plus this share of any rise; a fall you take in full.
-    sellShareOfRise: 0.5,
+    // Selling gives back what you paid.
   },
 };
 

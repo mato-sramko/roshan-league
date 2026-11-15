@@ -47,6 +47,13 @@ const STEPS: string[] = [
   );
   CREATE INDEX IF NOT EXISTS standings_board ON standings (mode, scope, total DESC)
   `,
+  // 3: fixed season prices. price_src: 'season' (from last season), 'new' (after 3 matches this season),
+  // 'team' (for now, from priced teammates), NULL (not priced yet)
+  `
+  ALTER TABLE pro_players ADD COLUMN IF NOT EXISTS price_src TEXT;
+  ALTER TABLE pro_players ALTER COLUMN price SET DEFAULT 50;
+  DELETE FROM meta WHERE key IN ('prices_for', 'reprice_pending')
+  `,
 ];
 
 export async function migrate(tx: <T>(fn: (q: Q) => Promise<T>) => Promise<T>, postgres: boolean): Promise<void> {

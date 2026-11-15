@@ -1,7 +1,8 @@
 // Pulls finished pro matches from the free OpenDota API and scores them.
 import { q, tx, now } from './db';
 import { scorePlayer } from './scoring';
-import { getEvents, maybeRecomputePrices, payGrindIncome, type Ev } from './game';
+import { getEvents, computeStatus, payGrindIncome, setSeasonPrices, priceNewcomers, seasonPricesDone, type Ev, type SeasonStat } from './game';
+import { SCORING, SEASON } from '@/season.config';
 import { pruneLimits } from './limit';
 import { EVENTS } from '@/season.config';
 
@@ -11,7 +12,7 @@ const RECHECK_DAYS = 3; // how long we keep re-reading a match that is not fully
 async function od(path: string, init?: RequestInit): Promise<any> {
   const key = process.env.OPENDOTA_API_KEY;
   const url = `${BASE}${path}${key ? `${path.includes('?') ? '&' : '?'}api_key=${key}` : ''}`;
-    const ms = path === '/proPlayers' ? 60000 : 20000;
+  const ms = path === '/proPlayers' || path.startsWith('/explorer') ? 60000 : 20000;
   const res = await fetch(url, { ...init, signal: AbortSignal.timeout(ms), cache: 'no-store' });
   if (!res.ok) throw new Error(`OpenDota ${path} answered ${res.status}`);
   return res.json();
@@ -102,7 +103,7 @@ export type SyncReport = {
   fetched: number;
   left: number; // matches still waiting; call again while this is above 0
   events: Record<string, { listed: number; new: number; left: number }>;
-  prices: null | { priced: number; from: string[] };
+  prices: null | { priced: number; from: string };
   roles?: number;
   income?: string[];
   found?: string[];
@@ -145,8 +146,6 @@ export async function syncOnce(opts: { maxMatches?: number; budgetMs?: number; g
     }
   }
   const done = new Set((await q(`SELECT key FROM meta WHERE key LIKE 'done_%' AND value = '1'`)).map((r) => (r.key as string).slice(5)));
-  let backfillLeft = false;
-  let backfillFinishedNow = false;
 
   for (const e of events) {
     const mode = wanted(e, t, done);
@@ -156,7 +155,6 @@ export async function syncOnce(opts: { maxMatches?: number; budgetMs?: number; g
       list = await od(`/leagues/${e.league_id}/matches`);
     } catch (err: any) {
       report.errors.push(String(err.message || err));
-      if (mode === 'backfill') backfillLeft = true;
       continue;
     }
     const have = new Map(
@@ -193,17 +191,21 @@ export async function syncOnce(opts: { maxMatches?: number; budgetMs?: number; g
     if (mode === 'backfill') {
       if (rep.left <= 0 && list.length > 0) {
         await q(`INSERT INTO meta (key, value) VALUES ($1, '1') ON CONFLICT (key) DO UPDATE SET value = '1'`, [`done_${e.key}`]);
-        backfillFinishedNow = true;
-      } else backfillLeft = true;
+      }
     }
   }
 
-  // Old tournaments all loaded: prices are recalculated at the next chance (not while a tournament is live).
-  if (backfillFinishedNow && !backfillLeft) await setMeta('reprice_pending', '1');
+  // Prices: last season's are fetched once; newcomers are priced between tournaments.
   try {
-    const pending = (await q(`SELECT value FROM meta WHERE key = 'reprice_pending'`))[0]?.value === '1';
-    report.prices = await maybeRecomputePrices(pending);
-    if (report.prices && pending) await q(`DELETE FROM meta WHERE key = 'reprice_pending'`);
+    const live = computeStatus(await getEvents(), now()).live;
+    if (!(await seasonPricesDone())) {
+      if (!live || !(await q(`SELECT 1 FROM pro_players WHERE price_src IS NOT NULL LIMIT 1`)).length) {
+        report.prices = { ...(await setSeasonPrices(await fetchSeasonStats())), from: SEASON.priceFrom.label };
+      }
+    } else if (!live) {
+      const r = await priceNewcomers();
+      if (r.fixed || r.team) report.prices = { priced: r.fixed + r.team, from: 'newcomers' };
+    }
   } catch (err: any) {
     report.errors.push(String(err.message || err));
   }
@@ -239,6 +241,29 @@ async function findLeagues(events: Ev[], t: number): Promise<string[]> {
     found.push(`${e.key}=${row.leagueid} (${String(row.name).trim()})`);
   }
   return found;
+}
+
+// Last season's average points per match for every player, from all top-tier matches in
+// SEASON.priceFrom, in one OpenDota query. Parsed-only stats (wards, stacks, runes, teamfights)
+// are averaged over parsed matches.
+async function fetchSeasonStats(): Promise<Map<string, SeasonStat>> {
+  const from = Math.floor(Date.parse(`${SEASON.priceFrom.from}T00:00:00Z`) / 1000);
+  const to = Math.floor(Date.parse(`${SEASON.priceFrom.to}T00:00:00Z`) / 1000) + 86400;
+  const fields = Object.keys(SCORING).filter((f) => /^[a-z_]+$/.test(f));
+  const sql = `SELECT pm.account_id, COUNT(*) AS n, ${fields.map((f) => `AVG(pm.${f})::float AS ${f}`).join(', ')}
+    FROM player_matches pm JOIN matches m ON m.match_id = pm.match_id JOIN leagues l ON l.leagueid = m.leagueid
+    WHERE l.tier = 'premium' AND m.start_time >= ${from} AND m.start_time < ${to} AND pm.account_id IS NOT NULL
+    GROUP BY pm.account_id`;
+  const res = await od(`/explorer?sql=${encodeURIComponent(sql)}`);
+  if (res?.err) throw new Error(`OpenDota explorer: ${res.err}`);
+  const rows: any[] = res?.rows ?? [];
+  if (rows.length < 100) throw new Error(`OpenDota explorer returned only ${rows.length} players for last season`);
+  const out = new Map<string, SeasonStat>();
+  for (const r of rows) {
+    const points = fields.reduce((a, f) => a + (Number(r[f]) || 0) * SCORING[f], 0);
+    out.set(String(r.account_id), { n: Number(r.n), points });
+  }
+  return out;
 }
 
 async function setMeta(key: string, value: string): Promise<void> {

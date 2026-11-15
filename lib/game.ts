@@ -69,10 +69,9 @@ export async function getPlayers(): Promise<Player[]> {
   return rows.map((r) => withInactive(r, t));
 }
 
+// Grind: selling gives back what you paid.
 export function sellPrice(buy: number | null, current: number): number {
-  if (buy == null) return current;
-  if (current <= buy) return current;
-  return buy + Math.floor((current - buy) * SEASON.grind.sellShareOfRise);
+  return buy ?? current;
 }
 
 // ---------------------------------------------------------------------------
@@ -536,109 +535,163 @@ export function valveRole(v: number | null | undefined): Role | null {
   return v === 4 ? 'mid' : v === 2 ? 'support' : v === 1 || v === 3 ? 'core' : null;
 }
 
-const RECENT_MAIN = `SELECT e.key, (SELECT MAX(start_time) FROM matches m WHERE m.event_key = e.key) AS last
-  FROM events e
-  WHERE e.kind = 'main' AND (e.ends_at IS NULL OR e.ends_at < $1)
-    AND EXISTS (SELECT 1 FROM matches m WHERE m.event_key = e.key)
-    -- a past tournament still being loaded does not set prices yet
-    AND (e.multiplier > 0 OR EXISTS (SELECT 1 FROM meta WHERE meta.key = 'done_' || e.key))
-  ORDER BY last DESC LIMIT 2`;
+// Previous season's stats per player: matches and average of each scored stat.
+export type SeasonStat = { n: number; points: number };
 
-// Sets every player's role and price.
-// Role: ROLE_OVERRIDES, else Valve's role, else what they played most in their last 15 matches.
-// Price: average points per match over the two most recent finished main tournaments,
-// scaled inside each role so the best costs priceMax and the weakest priceMin.
-export async function recomputePrices(): Promise<{ priced: number; from: string[] }> {
-  const t = now();
-  const recent = (await q(RECENT_MAIN, [t])).map((r) => r.key as string);
-
-  const roleRows = await q(
-    `SELECT account_id, role, COUNT(*)::int AS n FROM (
-       SELECT pm.account_id, pm.role,
-              ROW_NUMBER() OVER (PARTITION BY pm.account_id ORDER BY m.start_time DESC) AS rn
-       FROM player_match_points pm JOIN matches m ON m.match_id = pm.match_id
-       WHERE pm.role IS NOT NULL) x
-     WHERE rn <= 15 GROUP BY account_id, role`,
-  );
-  const guessed = new Map<string, { role: Role; n: number }>();
-  for (const r of roleRows) {
-    const cur = guessed.get(r.account_id);
-    if (!cur || r.n > cur.n) guessed.set(r.account_id, { role: r.role, n: r.n });
-  }
-
-  const stats = new Map<string, { avg: number; n: number }>();
-  if (recent.length) {
-    const rows = await q(
-      `SELECT pm.account_id, AVG(pm.points)::float8 AS avg, COUNT(*)::int AS n
-       FROM player_match_points pm JOIN matches m ON m.match_id = pm.match_id
-       WHERE m.event_key IN ($1, $2) GROUP BY pm.account_id`,
-      [recent[0], recent[1] ?? recent[0]],
-    );
-    for (const r of rows) stats.set(r.account_id, { avg: r.avg, n: r.n });
-  }
-
+// Sets every player's price for the whole season from last season's stats, once.
+// Inside each role, players are ranked by average points per match (pulled toward the
+// role's average when they played few matches), and the rank sets the price:
+// the best costs priceMax, the weakest priceMin, the middle about 140.
+export async function setSeasonPrices(stats: Map<string, SeasonStat>): Promise<{ priced: number }> {
+  await loadRoleGuesses();
   const players = await q(`SELECT account_id, role, valve_role FROM pro_players`);
-  const roleOf = (p: Row): Role =>
-    ROLE_OVERRIDES[p.account_id] ?? valveRole(p.valve_role) ?? guessed.get(p.account_id)?.role ?? p.role;
-  const range: Record<string, { min: number; max: number }> = {};
-  for (const p of players) {
-    const s = stats.get(p.account_id);
-    if (!s || s.n < SEASON.priceMinMatches) continue;
-    const g = (range[roleOf(p)] ??= { min: s.avg, max: s.avg });
-    g.min = Math.min(g.min, s.avg);
-    g.max = Math.max(g.max, s.avg);
-  }
-
-  let priced = 0;
-  const updates: [string, Role, number, number | null][] = [];
+  const byRole: Record<string, { id: string; avg: number; n: number }[]> = {};
+  const roles = new Map<string, Role>();
   for (const p of players) {
     const ro = roleOf(p);
+    roles.set(p.account_id, ro);
     const s = stats.get(p.account_id);
-    let price = SEASON.priceDefault;
-    let avg: number | null = null;
-    if (s && s.n >= SEASON.priceMinMatches && range[ro]) {
-      const { min, max } = range[ro];
-      const share = max > min ? (s.avg - min) / (max - min) : 0.5;
-      price = round5(SEASON.priceMin + share * (SEASON.priceMax - SEASON.priceMin));
-      avg = Math.round(s.avg * 100) / 100;
-      priced++;
-    }
-    updates.push([p.account_id, ro, price, avg]);
+    if (s && s.n >= SEASON.priceMinMatches) (byRole[ro] ??= []).push({ id: p.account_id, avg: s.points, n: s.n });
   }
+  const curve: Record<string, { mean: number; adj: number[] }> = {};
+  const updates: [string, Role, number, number | null, string | null][] = [];
+  for (const [ro, list] of Object.entries(byRole)) {
+    const mean = list.reduce((a, x) => a + x.avg * x.n, 0) / list.reduce((a, x) => a + x.n, 0);
+    const scored = list.map((x) => ({ ...x, adj: shrink(x.avg, x.n, mean) })).sort((a, b) => a.adj - b.adj);
+    curve[ro] = { mean, adj: scored.map((x) => Math.round(x.adj * 1000) / 1000) };
+    scored.forEach((x, i) => {
+      const share = scored.length > 1 ? i / (scored.length - 1) : 0.5;
+      updates.push([x.id, ro as Role, priceAt(share), Math.round(x.avg * 100) / 100, 'season']);
+    });
+  }
+  const priced = new Set(updates.map((u) => u[0]));
+  for (const p of players) if (!priced.has(p.account_id)) updates.push([p.account_id, roles.get(p.account_id)!, SEASON.priceMin, null, null]);
   await tx(async (query) => {
-    for (let i = 0; i < updates.length; i += 200) {
-      const chunk = updates.slice(i, i + 200);
-      const vals: any[] = [];
-      const tuples = chunk.map((u, j) => {
-        vals.push(...u);
-        const n = j * 4;
-        return `($${n + 1}::text, $${n + 2}::text, $${n + 3}::int, $${n + 4}::real)`;
-      });
-      await query(
-        `UPDATE pro_players p SET role = v.role, price = v.price, avg_points = v.avg
-         FROM (VALUES ${tuples.join(',')}) AS v(id, role, price, avg) WHERE p.account_id = v.id`,
-        vals,
-      );
-    }
-    await query(`INSERT INTO meta (key, value) VALUES ('prices_for', $1) ON CONFLICT (key) DO UPDATE SET value = $1`, [
-      recent.join(','),
-    ]);
+    await writePrices(query, updates);
+    await query(`INSERT INTO meta (key, value) VALUES ('price_curve', $1) ON CONFLICT (key) DO UPDATE SET value = $1`, [JSON.stringify(curve)]);
+    await query(`INSERT INTO meta (key, value) VALUES ('season_prices', $1) ON CONFLICT (key) DO UPDATE SET value = $1`, [SEASON.id]);
   });
-  return { priced, from: recent };
+  await priceNewcomers();
+  return { priced: priced.size };
 }
 
-// Prices move only when a window opens: never while a tournament is live.
-// `force` is used once, right after old tournaments finish loading.
-export async function maybeRecomputePrices(force = false): Promise<null | { priced: number; from: string[] }> {
-  const t = now();
-  const status = computeStatus(await getEvents(), t);
-  const have = (await q(`SELECT value FROM meta WHERE key = 'prices_for'`))[0]?.value as string | undefined;
-  if (have === undefined) return recomputePrices();
-  if (status.live) return null;
-  if (force) return recomputePrices();
-  const recent = (await q(RECENT_MAIN, [t])).map((r) => r.key).join(',');
-  if (have === recent) return null;
-  return recomputePrices();
+// Players with no price from last season. After their first priceMinMatches matches in this
+// season's main tournaments they get a price, once, ranked against last season's players of
+// their role. Until then they cost what their priced teammates cost on average (priceMin if none).
+// Runs only between tournaments.
+export async function priceNewcomers(): Promise<{ fixed: number; team: number }> {
+  const curveRow = (await q(`SELECT value FROM meta WHERE key = 'price_curve'`))[0];
+  if (!curveRow) return { fixed: 0, team: 0 };
+  const curve: Record<string, { mean: number; adj: number[] }> = JSON.parse(curveRow.value);
+  await loadRoleGuesses();
+  const after = day(SEASON.priceFrom.to) + 86400;
+  const players = await q(`SELECT account_id, role, valve_role, team_id, price, price_src FROM pro_players`);
+  const open = players.filter((p) => p.price_src == null || p.price_src === 'team');
+  if (!open.length) return { fixed: 0, team: 0 };
+  const stats = new Map<string, { avg: number; n: number }>(
+    (
+      await q(
+        `SELECT pm.account_id, AVG(pm.points)::float8 AS avg, COUNT(*)::int AS n
+         FROM player_match_points pm JOIN matches m ON m.match_id = pm.match_id JOIN events e ON e.key = m.event_key
+         WHERE e.kind = 'main' AND m.start_time >= $1 GROUP BY pm.account_id`,
+        [after],
+      )
+    ).map((r) => [r.account_id, { avg: r.avg, n: r.n }]),
+  );
+  const updates: [string, Role, number, number | null, string | null][] = [];
+  const fixedIds = new Set<string>();
+  for (const p of open) {
+    const ro = roleOf(p);
+    const s = stats.get(p.account_id);
+    const c = curve[ro];
+    if (s && s.n >= SEASON.priceMinMatches && c && c.adj.length) {
+      const adj = shrink(s.avg, s.n, c.mean);
+      const below = c.adj.filter((x) => x < adj).length;
+      const share = c.adj.length > 1 ? Math.min(1, below / (c.adj.length - 1)) : 0.5;
+      updates.push([p.account_id, ro, priceAt(share), Math.round(s.avg * 100) / 100, 'new']);
+      fixedIds.add(p.account_id);
+    }
+  }
+  // Team prices use only fixed prices, so they do not feed on each other.
+  const fixedByTeam = new Map<string, number[]>();
+  for (const p of players) {
+    const fixed = p.price_src === 'season' || p.price_src === 'new' ? p.price : fixedIds.has(p.account_id) ? updates.find((u) => u[0] === p.account_id)![2] : null;
+    if (fixed != null && p.team_id) (fixedByTeam.get(p.team_id) ?? fixedByTeam.set(p.team_id, []).get(p.team_id)!).push(fixed);
+  }
+  let team = 0;
+  for (const p of open) {
+    if (fixedIds.has(p.account_id)) continue;
+    const mates = p.team_id ? fixedByTeam.get(p.team_id) : undefined;
+    const price = mates?.length ? round5(mates.reduce((a, x) => a + x, 0) / mates.length) : SEASON.priceMin;
+    if (price === p.price && p.price_src === 'team') continue;
+    updates.push([p.account_id, roleOf(p), price, null, 'team']);
+    team++;
+  }
+  if (updates.length) await tx((query) => writePrices(query, updates));
+  return { fixed: fixedIds.size, team };
+}
+
+// Prices change only between tournaments. Last season's prices are set once per season
+// (the sync fetches the stats); newcomers are priced when they have played enough.
+export async function seasonPricesDone(): Promise<boolean> {
+  return (await q(`SELECT value FROM meta WHERE key = 'season_prices'`))[0]?.value === SEASON.id;
+}
+
+// Role: ROLE_OVERRIDES, else Valve's role, else what they played most in their last 15 tracked matches.
+let guessed: Map<string, Role> | null = null;
+async function loadRoleGuesses(): Promise<void> {
+  const rows = await q(
+    `SELECT account_id, role, COUNT(*)::int AS n FROM (
+       SELECT pm.account_id, pm.role, ROW_NUMBER() OVER (PARTITION BY pm.account_id ORDER BY m.start_time DESC) AS rn
+       FROM player_match_points pm JOIN matches m ON m.match_id = pm.match_id WHERE pm.role IS NOT NULL) x
+     WHERE rn <= 15 GROUP BY account_id, role`,
+  );
+  const best = new Map<string, { role: Role; n: number }>();
+  for (const r of rows) {
+    const cur = best.get(r.account_id);
+    if (!cur || r.n > cur.n) best.set(r.account_id, { role: r.role, n: r.n });
+  }
+  guessed = new Map([...best].map(([k, v]) => [k, v.role]));
+}
+function roleOf(p: Row): Role {
+  return ROLE_OVERRIDES[p.account_id] ?? valveRole(p.valve_role) ?? guessed?.get(p.account_id) ?? p.role;
+}
+function shrink(avg: number, n: number, mean: number): number {
+  return (avg * n + mean * SEASON.priceShrink) / (n + SEASON.priceShrink);
+}
+// share 0..1 (rank inside the role) -> price. Curved so only the very best are near the top.
+function priceAt(share: number): number {
+  return round5(SEASON.priceMin + (SEASON.priceMax - SEASON.priceMin) * Math.pow(share, 1.5));
+}
+function day(d: string): number {
+  return Math.floor(Date.parse(`${d}T00:00:00Z`) / 1000);
+}
+async function writePrices(query: Q, updates: [string, Role, number, number | null, string | null][]): Promise<void> {
+  for (let i = 0; i < updates.length; i += 200) {
+    const chunk = updates.slice(i, i + 200);
+    const vals: any[] = [];
+    const tuples = chunk.map((u, j) => {
+      vals.push(...u);
+      const n = j * 5;
+      return `($${n + 1}::text, $${n + 2}::text, $${n + 3}::int, $${n + 4}::real, $${n + 5}::text)`;
+    });
+    await query(
+      `UPDATE pro_players p SET role = v.role, price = v.price, avg_points = v.avg, price_src = v.src
+       FROM (VALUES ${tuples.join(',')}) AS v(id, role, price, avg, src) WHERE p.account_id = v.id`,
+      vals,
+    );
+  }
+}
+
+// Last season's stats from our own stored matches (demo and tests; the live site asks OpenDota).
+export async function localSeasonStats(): Promise<Map<string, SeasonStat>> {
+  const rows = await q(
+    `SELECT pm.account_id, AVG(pm.points)::float8 AS points, COUNT(*)::int AS n
+     FROM player_match_points pm JOIN matches m ON m.match_id = pm.match_id
+     WHERE m.start_time >= $1 AND m.start_time < $2 GROUP BY pm.account_id`,
+    [day(SEASON.priceFrom.from), day(SEASON.priceFrom.to) + 86400],
+  );
+  return new Map(rows.map((r) => [r.account_id, { n: r.n, points: r.points }]));
 }
 
 export function fmtDate(ts: number | null): string {

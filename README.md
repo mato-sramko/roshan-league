@@ -75,14 +75,16 @@ Two modes, each with its own squad and leaderboard:
 - **Casual:** 1,150 coins for the season. Each window between tournaments: 2 free transfers, every further one costs 20 points.
 - **Grind:** 650 coins at the start (plus 50 per tournament already started, for late starters). After every
   tournament, income by finishing position: top 10% 120, top 25% 100, top 50% 75, the rest 50. Selling returns the
-  purchase price plus half of any rise. Unlimited trades between tournaments.
+  purchase price. Unlimited trades between tournaments.
 
 Both:
 
-- Squad: 2 cores, 1 mid, 2 supports, plus a bench of one of each; at most 2 from one pro team, bench included.
+- Squad: 2 cores, 1 mid, 2 supports, plus an optional bench of up to one of each; at most 2 from one pro team, bench included.
 - A bench player scores only in a tournament where fewer starters of that role play than the squad needs.
-- Prices: 50 to 300, from average points per match in the two most recent finished main tournaments, per role.
-  Recalculated when a transfer window opens. Players without enough matches cost 50.
+- Prices: 50 to 300, fixed for the whole season, from the previous season (TI to TI): rank inside the role by
+  average points per match in all top-tier matches, pulled toward the role average for players with few matches.
+  Players with fewer than 3 such matches get their price once, after 3 matches this season; until then they cost
+  their priced teammates' average.
 - Squads lock when a tournament starts and unlock at 06:00 UTC the day after it ends.
 - A player with no tracked match for 90 days is free to replace and cannot be signed.
 - A player scores for you only in matches that start after you signed them. The International counts three times.

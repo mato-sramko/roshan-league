@@ -51,22 +51,26 @@ export default async function Rules() {
 
       <h2>Prices</h2>
       <p>
-        A player costs between {s.priceMin} and {s.priceMax} coins. The price comes from their average fantasy points per match over the two most recent
-        finished main tournaments, compared with others in the same role. Prices change only when a transfer window opens. A player without{' '}
-        {s.priceMinMatches} matches in those tournaments costs {s.priceDefault}.
+        Prices come from the previous season, {s.priceFrom.label}, and stay the same all season. Every player is ranked inside their role by average
+        fantasy points per match in that season&apos;s top-tier matches; the best cost {s.priceMax} coins, the weakest {s.priceMin}. A player with only a
+        few matches is pulled toward his role&apos;s average, so one lucky game does not make a star.
+      </p>
+      <p>
+        A player who played fewer than {s.priceMinMatches} such matches last season gets his price once, after his first {s.priceMinMatches} matches this
+        season, ranked against last season&apos;s players. Until then he costs what his teammates cost on average. A price is never changed while a
+        tournament is being played.
       </p>
 
       <h2>Casual: transfers</h2>
       <p>
         Your squad has to fit the {c.budget.toLocaleString('en')}-coin budget at current prices whenever you make a change. A squad you already own stays
-        yours if prices rise. In each window between tournaments you get {c.freeTransfersPerWindow} free transfers; every further one costs{' '}
+        yours if a newcomer&apos;s price goes up. In each window between tournaments you get {c.freeTransfersPerWindow} free transfers; every further one costs{' '}
         {c.extraTransferPenalty} points. Moving a player between the bench and the starters is free, and so is filling an empty bench slot; dropping a bench player counts as a transfer.
       </p>
 
       <h2>Grind: coins</h2>
       <p>
-        You buy players at their current price and sell them for what you paid plus {Math.round(g.sellShareOfRise * 100)}% of any rise; a fall you take in
-        full. There is no limit on trades between tournaments. Coins and points are separate: points decide the leaderboard, coins only buy players.
+        You buy players at their price and sell them for what you paid. There is no limit on trades between tournaments. Coins and points are separate: points decide the leaderboard, coins only buy players.
       </p>
       <p>When a tournament is over, every grind manager whose squad existed when it started is paid by finishing position in that tournament:</p>
       <div className="tablewrap">

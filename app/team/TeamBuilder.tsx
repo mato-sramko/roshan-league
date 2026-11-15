@@ -276,7 +276,7 @@ export default function TeamBuilder(p: Props) {
           <thead>
             <tr>
               <th>Player</th>
-              <th className="r">Avg pts</th>
+              <th className="r" title="Average points per match last season">Pts/match</th>
               <th className="r">Price</th>
               <th />
             </tr>
