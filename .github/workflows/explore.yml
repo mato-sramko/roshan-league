@@ -1,0 +1,21 @@
+name: OpenDota query
+on:
+  workflow_dispatch:
+    inputs:
+      sql:
+        description: Read-only SQL for the OpenDota explorer
+        required: true
+permissions:
+  contents: read
+jobs:
+  query:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: npx -y tsx@4.19.2 scripts/explore.ts
+        env:
+          SQL: ${{ inputs.sql }}
