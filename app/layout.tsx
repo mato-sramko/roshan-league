@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   manifest: '/manifest.webmanifest',
   icons: { icon: '/icon.svg' },
 };
-export const viewport: Viewport = { themeColor: '#16211c', width: 'device-width', initialScale: 1 };
+export const viewport: Viewport = { themeColor: '#15191e', width: 'device-width', initialScale: 1 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const user = await getUser();

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import ModeFrame from '@/app/ModeFrame';
 import { getUser, devLoginAllowed } from '@/lib/auth';
 import { getEvents, computeStatus, getPlayers, getSquad, getEditMode, grindStartCoins, computePoints, fmtDate, fmtPts, isMode } from '@/lib/game';
 import { q } from '@/lib/db';
@@ -55,6 +56,7 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
   return (
     <>
       <section className="hero" style={{ paddingBottom: 0 }}>
+        <ModeFrame mode={mode} />
         <div className="tabs" aria-label="Game mode">
           <Link href="/team?mode=casual" className={mode === 'casual' ? 'on' : ''}>
             Casual

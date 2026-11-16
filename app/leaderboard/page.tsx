@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import ModeFrame from '@/app/ModeFrame';
 import { getUser } from '@/lib/auth';
 import { q, now } from '@/lib/db';
 import { getEvents, getStandings, standingsUpdatedAt, fmtPts, isMode, type Mode } from '@/lib/game';
@@ -41,6 +42,7 @@ export default async function Leaderboard({ searchParams }: { searchParams: Prom
         </p>
       </section>
 
+      <ModeFrame mode={mode} />
       <div className="tabs" aria-label="Game mode">
         <Link href={href({ mode: 'casual', ev: sp.event, lg: sp.league })} className={!grind ? 'on' : ''}>
           Casual

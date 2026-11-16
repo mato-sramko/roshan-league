@@ -31,14 +31,14 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ l
       <section className="hero">
         <h1>Draft five pros. Run them from one TI to the next.</h1>
         <p className="lede">
-          Roshan League is a season-long Dota 2 fantasy game. Pick two cores, a mid, two supports and a bench of three.
+          Roshan League is a season-long Dota 2 fantasy game. Pick two cores, a mid, two supports and, if you like, a bench of three.
           Every tier-one tournament scores, and The International scores triple.
         </p>
         <ul className="modes">
-          <li>
+          <li className="casual">
             <b>Casual.</b> {SEASON.casual.budget.toLocaleString('en')} coins for the whole season. Build a strong squad and fine-tune it.
           </li>
-          <li>
+          <li className="grind">
             <b>Grind.</b> Start with {SEASON.grind.start} coins, earn more after every tournament, and trade your way up to a dream squad by TI.
           </li>
         </ul>
