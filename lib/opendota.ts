@@ -4,6 +4,7 @@ import { scorePlayer } from './scoring';
 import { getEvents, computeStatus, payGrindIncome, setSeasonPrices, priceNewcomers, seasonPricesDone, type Ev, type SeasonStat } from './game';
 import { SCORING, SEASON } from '@/season.config';
 import { pruneLimits } from './limit';
+import { refreshRosters, type LpReport } from './liquipedia';
 import { EVENTS } from '@/season.config';
 
 const BASE = process.env.OPENDOTA_BASE || 'https://api.opendota.com/api';
@@ -80,8 +81,10 @@ export async function ingestMatch(m: any, eventKey: string, summary?: Summary): 
          VALUES ($1,$2,$3,$4,$5,$6)
          ON CONFLICT (account_id) DO UPDATE SET
            name = CASE WHEN pro_players.last_match IS NULL OR $6 >= pro_players.last_match THEN $2 ELSE pro_players.name END,
-           team_id = CASE WHEN pro_players.last_match IS NULL OR $6 >= pro_players.last_match THEN $3 ELSE pro_players.team_id END,
-           team_name = CASE WHEN pro_players.last_match IS NULL OR $6 >= pro_players.last_match THEN $4 ELSE pro_players.team_name END,
+           team_id = CASE WHEN pro_players.lp_at > $6 - 259200 THEN pro_players.team_id
+             WHEN pro_players.last_match IS NULL OR $6 >= pro_players.last_match THEN $3 ELSE pro_players.team_id END,
+           team_name = CASE WHEN pro_players.lp_at > $6 - 259200 THEN pro_players.team_name
+             WHEN pro_players.last_match IS NULL OR $6 >= pro_players.last_match THEN $4 ELSE pro_players.team_name END,
            last_match = GREATEST(COALESCE(pro_players.last_match, 0), $6)`,
         [id, p.name || p.personaname || `Player ${id}`, team.id != null ? String(team.id) : null, team.name, roleOf.get(p) ?? 'core', start],
       );
@@ -105,6 +108,7 @@ export type SyncReport = {
   events: Record<string, { listed: number; new: number; left: number }>;
   prices: null | { priced: number; from: string };
   roles?: number;
+  rosters?: LpReport;
   income?: string[];
   found?: string[];
   errors: string[];
@@ -131,6 +135,18 @@ export async function syncOnce(opts: { maxMatches?: number; budgetMs?: number; g
     } catch (err: any) {
       report.errors.push(String(err.message || err));
       await setMeta('roles_at', String(t - 18 * 3600)); // try again in about two hours
+    }
+  }
+
+  // Every 6 hours, when a Liquipedia key is set: current rosters and positions.
+  const lpAt = Number((await q(`SELECT value FROM meta WHERE key = 'lp_at'`))[0]?.value ?? 0);
+  if (process.env.LIQUIPEDIA_API_KEY && lpAt < t - 6 * 3600) {
+    try {
+      report.rosters = await refreshRosters();
+      await setMeta('lp_at', String(t));
+    } catch (err: any) {
+      report.errors.push(String(err.message || err));
+      await setMeta('lp_at', String(t - 5 * 3600)); // try again in about an hour
     }
   }
 
@@ -297,9 +313,10 @@ export async function refreshValveRoles(): Promise<number> {
     });
     await q(
       `UPDATE pro_players p SET valve_role = COALESCE(v.r, p.valve_role),
-         team_id = COALESCE(v.tid, p.team_id), team_name = COALESCE(v.tname, p.team_name)
+         team_id = CASE WHEN p.lp_at > $${vals.length + 1} THEN p.team_id ELSE COALESCE(v.tid, p.team_id) END,
+         team_name = CASE WHEN p.lp_at > $${vals.length + 1} THEN p.team_name ELSE COALESCE(v.tname, p.team_name) END
        FROM (VALUES ${tuples.join(',')}) AS v(id, r, tid, tname) WHERE p.account_id = v.id`,
-      vals,
+      [...vals, now() - 259200],
     );
   }
   return rows.length;

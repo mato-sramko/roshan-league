@@ -544,7 +544,7 @@ export type SeasonStat = { n: number; points: number };
 // the best costs priceMax, the weakest priceMin, the middle about 140.
 export async function setSeasonPrices(stats: Map<string, SeasonStat>): Promise<{ priced: number }> {
   await loadRoleGuesses();
-  const players = await q(`SELECT account_id, role, valve_role FROM pro_players`);
+  const players = await q(`SELECT account_id, role, valve_role, lp_pos FROM pro_players`);
   const byRole: Record<string, { id: string; avg: number; n: number }[]> = {};
   const roles = new Map<string, Role>();
   for (const p of players) {
@@ -585,7 +585,7 @@ export async function priceNewcomers(): Promise<{ fixed: number; team: number }>
   const curve: Record<string, { mean: number; adj: number[] }> = JSON.parse(curveRow.value);
   await loadRoleGuesses();
   const after = day(SEASON.priceFrom.to) + 86400;
-  const players = await q(`SELECT account_id, role, valve_role, team_id, price, price_src FROM pro_players`);
+  const players = await q(`SELECT account_id, role, valve_role, lp_pos, team_id, price, price_src FROM pro_players`);
   const open = players.filter((p) => p.price_src == null || p.price_src === 'team');
   if (!open.length) return { fixed: 0, team: 0 };
   const stats = new Map<string, { avg: number; n: number }>(
@@ -637,7 +637,8 @@ export async function seasonPricesDone(): Promise<boolean> {
   return (await q(`SELECT value FROM meta WHERE key = 'season_prices'`))[0]?.value === SEASON.id;
 }
 
-// Role: ROLE_OVERRIDES, else Valve's role, else what they played most in their last 15 tracked matches.
+// Role: ROLE_OVERRIDES, else the Liquipedia position (1 and 3 core, 2 mid, 4 and 5 support),
+// else Valve's role, else what they played most in their last 15 tracked matches.
 let guessed: Map<string, Role> | null = null;
 async function loadRoleGuesses(): Promise<void> {
   const rows = await q(
@@ -654,7 +655,10 @@ async function loadRoleGuesses(): Promise<void> {
   guessed = new Map([...best].map(([k, v]) => [k, v.role]));
 }
 function roleOf(p: Row): Role {
-  return ROLE_OVERRIDES[p.account_id] ?? valveRole(p.valve_role) ?? guessed?.get(p.account_id) ?? p.role;
+  return ROLE_OVERRIDES[p.account_id] ?? lpRole(p.lp_pos) ?? valveRole(p.valve_role) ?? guessed?.get(p.account_id) ?? p.role;
+}
+function lpRole(pos: number | null | undefined): Role | null {
+  return pos === 1 || pos === 3 ? 'core' : pos === 2 ? 'mid' : pos === 4 || pos === 5 ? 'support' : null;
 }
 function shrink(avg: number, n: number, mean: number): number {
   return (avg * n + mean * SEASON.priceShrink) / (n + SEASON.priceShrink);

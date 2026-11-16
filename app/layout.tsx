@@ -52,7 +52,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <footer>
           <div className="wrap">
             Roshan League is a fan project and is not affiliated with or endorsed by Valve. Dota 2 is a trademark of Valve
-            Corporation. Match data comes from OpenDota.
+            Corporation. Match data comes from <a href="https://www.opendota.com">OpenDota</a>. Team rosters and positions come from{' '}
+            <a href="https://liquipedia.net/dota2/">Liquipedia</a>, licensed under{' '}
+            <a href="https://creativecommons.org/licenses/by-sa/3.0/">CC BY-SA 3.0</a>.
           </div>
         </footer>
       </body>

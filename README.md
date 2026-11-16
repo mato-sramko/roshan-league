@@ -81,6 +81,8 @@ Both:
 
 - Squad: 2 cores, 1 mid, 2 supports, plus an optional bench of up to one of each; at most 2 from one pro team, bench included.
 - A bench player scores only in a tournament where fewer starters of that role play than the squad needs.
+- Teams and positions: from Liquipedia's active rosters every 6 hours when the `LIQUIPEDIA_API_KEY` secret is set
+  (stand-ins ignored); otherwise from OpenDota. Roles follow the Liquipedia position (1 and 3 core, 2 mid, 4 and 5 support).
 - Prices: 50 to 300, fixed for the whole season, from the previous season (TI to TI): rank inside the role by
   average points per match in all top-tier matches, pulled toward the role average for players with few matches.
   Players with fewer than 3 such matches get their price once, after 3 matches this season; until then they cost
