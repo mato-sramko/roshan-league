@@ -61,6 +61,10 @@ const STEPS: string[] = [
   ALTER TABLE pro_players ADD COLUMN IF NOT EXISTS lp_pos INTEGER;
   DELETE FROM meta WHERE key IN ('season_prices', 'price_curve')
   `,
+  // 5: rosters read again with player pages looked up per roster; prices again with those roles
+  `
+  DELETE FROM meta WHERE key IN ('lp_at', 'season_prices', 'price_curve')
+  `,
 ];
 
 export async function migrate(tx: <T>(fn: (q: Q) => Promise<T>) => Promise<T>, postgres: boolean): Promise<void> {

@@ -38,10 +38,18 @@ export type LpReport = { squads: number; moved: number };
 // Sets team and position of every tracked player who is on a Liquipedia active roster
 // (stand-ins excluded). Players on no roster keep their last known team.
 export async function refreshRosters(): Promise<LpReport> {
-  const [squads, players] = [
-    await all('squadplayer', { conditions: '[[status::active]] AND [[type::player]]', query: 'pagename,link,id,position,role' }),
-    await all('player', { conditions: '[[status::Active]]', query: 'pagename,extradata' }),
-  ];
+  const squads = await all('squadplayer', { conditions: '[[status::active]] AND [[type::player]]', query: 'pagename,link,id,position,role' });
+  // The player pages of everyone on a roster, 40 per request, for their Steam account id.
+  const pages = [...new Set(squads.map((s) => String(s.link || s.id || '').trim().replace(/ /g, '_')).filter(Boolean))];
+  const players: any[] = [];
+  for (let i = 0; i < pages.length; i += 40) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const cond = pages
+      .slice(i, i + 40)
+      .map((p) => `[[pagename::${p.replace(/[\[\]|]/g, '')}]]`)
+      .join(' OR ');
+    players.push(...(await lp('player', { conditions: cond, query: 'pagename,extradata', limit: 1000 })));
+  }
   // Liquipedia page -> Steam account id
   const idOf = new Map<string, string>();
   for (const p of players) {
