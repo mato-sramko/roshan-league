@@ -1,6 +1,13 @@
 name: Liquipedia check
 on:
   workflow_dispatch:
+    inputs:
+      query:
+        description: 'Optional: one query to print, e.g. squadplayer?limit=3'
+        required: false
+      rows:
+        description: Rows to print
+        required: false
 permissions:
   contents: read
 jobs:
@@ -15,3 +22,5 @@ jobs:
       - run: npx -y tsx@4.19.2 scripts/liquipedia-check.ts
         env:
           LIQUIPEDIA_API_KEY: ${{ secrets.LIQUIPEDIA_API_KEY }}
+          LP_QUERY: ${{ inputs.query }}
+          LP_ROWS: ${{ inputs.rows }}

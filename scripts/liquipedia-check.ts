@@ -4,6 +4,16 @@ const key = process.env.LIQUIPEDIA_API_KEY;
 const types = ['player', 'team', 'squadplayer', 'tournament', 'match', 'placement', 'transfer', 'teamtemplate', 'image'];
 (async () => {
   if (!key) return console.log('LIQUIPEDIA_API_KEY is not set');
+  // Optional: LP_QUERY="squadplayer?conditions=..." prints the raw rows of one query instead.
+  if (process.env.LP_QUERY) {
+    const res = await fetch(`https://api.liquipedia.net/api/v3/${process.env.LP_QUERY}${process.env.LP_QUERY.includes('?') ? '&' : '?'}wiki=dota2`, {
+      headers: { Authorization: `Apikey ${key}`, 'User-Agent': 'RoshanLeague (https://roshanleague.com)', 'Accept-Encoding': 'gzip' },
+    });
+    const j: any = await res.json();
+    console.log(`HTTP ${res.status} rows=${j.result?.length ?? 0}`);
+    console.log(JSON.stringify(j.error ?? j.result?.slice(0, Number(process.env.LP_ROWS || 3)), null, 1).slice(0, 12000));
+    return;
+  }
   for (const t of types) {
     const res = await fetch(`https://api.liquipedia.net/api/v3/${t}?wiki=dota2&limit=1`, {
       headers: { Authorization: `Apikey ${key}`, 'User-Agent': 'RoshanLeague (https://roshanleague.com)', 'Accept-Encoding': 'gzip' },
