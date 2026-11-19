@@ -63,10 +63,18 @@ GitHub switches off scheduled workflows in a public repository after 60 days wit
 `.github/workflows/keepalive.yml` commits the date to `.github/keepalive` once a month to prevent that.
 If a sync ever stops anyway, open the Actions tab: GitHub shows an "Enable workflow" button there.
 
+## Reliable sync timing
+
+GitHub often runs scheduled workflows late (hours apart when it is busy). A free cron-job.org job therefore starts
+the sync every 15 minutes: `POST https://api.github.com/repos/roshanleague/roshanleague/actions/workflows/sync.yml/dispatches`
+with body `{"ref":"main"}` and the headers `Accept: application/vnd.github+json`, `Content-Type: application/json` and
+`Authorization: Bearer <token>` (a fine-grained token with Actions: write on this repository only; renew it before it expires).
+The schedule in `sync.yml` stays as a backup.
+
 ## Keeping an eye on it
 
 `/api/health` answers 200 while the match data is fresh and 503 when the last good sync is over 45 minutes old.
-A free uptime monitor (for example UptimeRobot) pointed at it sends an e-mail when the sync gets stuck.
+A second cron-job.org job checks it every 30 minutes and sends an e-mail after two failures in a row.
 
 ## Rules in short
 
