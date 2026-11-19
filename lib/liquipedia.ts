@@ -215,7 +215,8 @@ export async function refreshMatches(events: { key: string; lp_page: string | nu
   for (const r of rows) {
     const key = byPage.get(norm(r.parent ?? ''));
     const ts = Date.parse(String(r.date ?? '').replace(' ', 'T') + 'Z');
-    if (!key || !r.match2id || !Number.isFinite(ts)) continue;
+    // Matches without a real date yet come as year 0000.
+    if (!key || !r.match2id || !Number.isFinite(ts) || ts < Date.UTC(2020, 0, 1)) continue;
     const o = Array.isArray(r.match2opponents) ? r.match2opponents : [];
     const side = (i: number) => {
       const name = String(o[i]?.name ?? '').trim();
