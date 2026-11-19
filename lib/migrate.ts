@@ -65,6 +65,40 @@ const STEPS: string[] = [
   `
   DELETE FROM meta WHERE key IN ('lp_at', 'season_prices', 'price_curve')
   `,
+  // 6: tournaments from Liquipedia: dates, invited teams and the match schedule.
+  // lp_team: the player's Liquipedia team in the same short form as event_teams.team and lp_matches.team1/2.
+  `
+  ALTER TABLE events ADD COLUMN IF NOT EXISTS lp_page TEXT;
+  ALTER TABLE events ADD COLUMN IF NOT EXISTS lp_start INTEGER;
+  ALTER TABLE events ADD COLUMN IF NOT EXISTS lp_end INTEGER;
+  ALTER TABLE pro_players ADD COLUMN IF NOT EXISTS lp_team TEXT;
+  CREATE TABLE IF NOT EXISTS event_teams (
+    event_key TEXT NOT NULL,
+    team TEXT NOT NULL,
+    name TEXT NOT NULL,
+    place TEXT,
+    PRIMARY KEY (event_key, team)
+  );
+  CREATE TABLE IF NOT EXISTS lp_matches (
+    id TEXT PRIMARY KEY,
+    event_key TEXT NOT NULL,
+    ts INTEGER NOT NULL,
+    exact BOOLEAN NOT NULL,
+    bestof INTEGER,
+    section TEXT,
+    team1 TEXT,
+    team2 TEXT,
+    name1 TEXT,
+    name2 TEXT,
+    score1 INTEGER,
+    score2 INTEGER,
+    winner INTEGER,
+    finished BOOLEAN NOT NULL,
+    stream TEXT
+  );
+  CREATE INDEX IF NOT EXISTS lp_matches_ts ON lp_matches (ts);
+  DELETE FROM meta WHERE key = 'lp_at'
+  `,
 ];
 
 export async function migrate(tx: <T>(fn: (q: Q) => Promise<T>) => Promise<T>, postgres: boolean): Promise<void> {

@@ -86,6 +86,7 @@ export async function seedDemo(managers = 10, keep = false): Promise<{ matches: 
       n++;
     }
   }
+  await seedSchedule(teams, t, r);
   if (keep) {
     await refreshStandings();
     return { matches: n, players: 0, managers: 0 };
@@ -134,4 +135,39 @@ export async function seedDemo(managers = 10, keep = false): Promise<{ matches: 
   }
   await refreshStandings();
   return { matches: n, players: pool.length, managers: made };
+}
+
+// A made-up Liquipedia schedule and team list for BLAST Slam IX (three Bo3 a day), to try out "Next games".
+async function seedSchedule(teams: { name: string }[], t: number, r: () => number): Promise<void> {
+  const e = (await q(`SELECT starts_at, ends_at FROM events WHERE key = 'blast9'`))[0];
+  if (!e?.starts_at) return;
+  const { teamKey } = await import('./liquipedia');
+  const field = teams.slice(1);
+  await q(`DELETE FROM event_teams WHERE event_key = 'blast9'`);
+  await q(`DELETE FROM lp_matches WHERE event_key = 'blast9'`);
+  const days = Math.round((e.ends_at - e.starts_at) / 86400);
+  const out = new Set<string>();
+  if (t > e.starts_at + 4 * 86400) out.add(field[field.length - 1].name);
+  for (const tm of field) {
+    await q(`INSERT INTO event_teams (event_key, team, name, place) VALUES ('blast9', $1, $2, $3)`, [teamKey(tm.name), tm.name, out.has(tm.name) ? '13-16' : null]);
+  }
+  await q(`UPDATE pro_players SET lp_team = NULL`);
+  let n = 0;
+  for (let d = 0; d < days; d++) {
+    for (const h of [11, 14, 17]) {
+      const ts = e.starts_at + d * 86400 + h * 3600;
+      const live = field.filter((x) => !out.has(x.name) || ts < e.starts_at + 4 * 86400);
+      const a = live[Math.floor(r() * live.length)];
+      let b = a;
+      while (b === a) b = live[Math.floor(r() * live.length)];
+      const done = ts + 3 * 3600 < t;
+      const s1 = done ? (r() < 0.5 ? 2 : 1) : ts <= t ? 1 : null;
+      const s2 = done ? 3 - (s1 ?? 0) - (s1 === 2 ? 0 : 1) : ts <= t ? 0 : null;
+      await q(
+        `INSERT INTO lp_matches (id, event_key, ts, exact, bestof, section, team1, team2, name1, name2, score1, score2, winner, finished, stream)
+         VALUES ($1, 'blast9', $2, TRUE, 3, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'https://www.twitch.tv/BLAST_Dota')`,
+        [`demo-${n++}`, ts, d < 5 ? 'Group stage' : 'Playoffs', teamKey(a.name), teamKey(b.name), a.name, b.name, s1, s2, done ? (s1! > s2! ? 1 : 2) : null, done],
+      );
+    }
+  }
 }

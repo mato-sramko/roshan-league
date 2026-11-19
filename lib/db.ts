@@ -60,14 +60,15 @@ async function create(): Promise<Driver> {
   // Keep the events table in step with season.config.ts (one statement, so a cold start stays quick)
   const vals: any[] = [];
   const tuples = EVENTS.map((e, i) => {
-    vals.push(e.key, e.name, e.leagueId, dayStart(e.start), dayEnd(e.end), e.multiplier, i, e.kind ?? 'main');
-    const n = i * 8;
-    return `($${n + 1},$${n + 2},$${n + 3}::int,$${n + 4}::int,$${n + 5}::int,$${n + 6}::real,$${n + 7}::int,$${n + 8})`;
+    vals.push(e.key, e.name, e.leagueId, dayStart(e.start), dayEnd(e.end), e.multiplier, i, e.kind ?? 'main', e.lp ?? null);
+    const n = i * 9;
+    return `($${n + 1},$${n + 2},$${n + 3}::int,$${n + 4}::int,$${n + 5}::int,$${n + 6}::real,$${n + 7}::int,$${n + 8},$${n + 9})`;
   });
   await d.q(
-    `INSERT INTO events (key, name, league_id, starts_at, ends_at, multiplier, sort, kind) VALUES ${tuples.join(',')}
+    `INSERT INTO events (key, name, league_id, starts_at, ends_at, multiplier, sort, kind, lp_page) VALUES ${tuples.join(',')}
      ON CONFLICT (key) DO UPDATE SET name = EXCLUDED.name, league_id = COALESCE(EXCLUDED.league_id, events.league_id), starts_at = EXCLUDED.starts_at,
-       ends_at = EXCLUDED.ends_at, multiplier = EXCLUDED.multiplier, sort = EXCLUDED.sort, kind = EXCLUDED.kind`,
+       ends_at = EXCLUDED.ends_at, multiplier = EXCLUDED.multiplier, sort = EXCLUDED.sort, kind = EXCLUDED.kind,
+       lp_page = EXCLUDED.lp_page`,
     vals,
   );
   return d;

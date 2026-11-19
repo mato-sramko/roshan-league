@@ -99,6 +99,10 @@ export type EventConfig = {
   // While leagueId is null, the sync looks for a new OpenDota league whose name matches this
   // (% is a wildcard) and fills the id in by itself. Set leagueId by hand to override.
   find?: string;
+  // Liquipedia page of the tournament (as in its address, e.g. 'BLAST/SLAM/9'). With LIQUIPEDIA_API_KEY set,
+  // the sync takes the dates, the league id, the invited teams and the match schedule from there.
+  // Liquipedia dates replace the ones here only when they are within 45 days of them.
+  lp?: string;
 };
 
 // Rosters lock from `start` 00:00 UTC until 06:00 UTC the day after `end`.
@@ -113,15 +117,15 @@ export const EVENTS: EventConfig[] = [
   { key: 'dl30-qual', name: 'DreamLeague Season 30 Qualifiers', leagueId: 20359, start: '2026-10-09', end: '2026-10-17', multiplier: 0, kind: 'qualifier' },
 
   // The season.
-  { key: 'blast9', name: 'BLAST Slam IX', leagueId: 20208, start: '2026-11-20', end: '2026-11-29', multiplier: 1 },
-  { key: 'dl30', name: 'DreamLeague Season 30', find: 'DreamLeague Season 30', leagueId: null, start: '2026-12-02', end: '2026-12-13', multiplier: 1 },
+  { key: 'blast9', name: 'BLAST Slam IX', lp: 'BLAST/SLAM/9', leagueId: 20208, start: '2026-11-20', end: '2026-11-29', multiplier: 1 },
+  { key: 'dl30', name: 'DreamLeague Season 30', lp: 'DreamLeague/30', find: 'DreamLeague Season 30', leagueId: null, start: '2026-12-02', end: '2026-12-13', multiplier: 1 },
   { key: 'fissure-jan', name: 'FISSURE (January)', find: '%FISSURE%', leagueId: null, start: '2027-01-09', end: '2027-01-17', multiplier: 1 },
-  { key: 'dl31', name: 'DreamLeague Season 31', find: 'DreamLeague Season 31', leagueId: null, start: '2027-01-20', end: '2027-01-31', multiplier: 1 },
-  { key: 'wallachia10', name: 'PGL Wallachia Season 10', find: 'PGL Wallachia%Season 10', leagueId: null, start: '2027-03-02', end: '2027-03-14', multiplier: 1 },
-  { key: 'esl-munich', name: 'ESL One Munich 2027', find: 'ESL One%Munich%', leagueId: null, start: '2027-04-04', end: '2027-04-11', multiplier: 1 },
-  { key: 'dl32', name: 'DreamLeague Season 32', find: 'DreamLeague Season 32', leagueId: null, start: '2027-04-26', end: '2027-05-09', multiplier: 1 },
-  { key: 'wallachia11', name: 'PGL Wallachia Season 11', find: 'PGL Wallachia%Season 11', leagueId: null, start: '2027-05-11', end: '2027-05-23', multiplier: 1 },
-  { key: 'ti2027', name: 'The International 2027', find: 'The International 2027', leagueId: null, start: null, end: null, multiplier: 3 },
+  { key: 'dl31', name: 'DreamLeague Season 31', lp: 'DreamLeague/31', find: 'DreamLeague Season 31', leagueId: null, start: '2027-01-20', end: '2027-01-31', multiplier: 1 },
+  { key: 'wallachia10', name: 'PGL Wallachia Season 10', lp: 'PGL/Wallachia/10', find: 'PGL Wallachia%Season 10', leagueId: null, start: '2027-03-02', end: '2027-03-14', multiplier: 1 },
+  { key: 'esl-munich', name: 'ESL One Munich 2027', lp: 'ESL_One/Munich/2027', find: 'ESL One%Munich%', leagueId: null, start: '2027-04-04', end: '2027-04-11', multiplier: 1 },
+  { key: 'dl32', name: 'DreamLeague Season 32', lp: 'DreamLeague/32', find: 'DreamLeague Season 32', leagueId: null, start: '2027-04-26', end: '2027-05-09', multiplier: 1 },
+  { key: 'wallachia11', name: 'PGL Wallachia Season 11', lp: 'PGL/Wallachia/11', find: 'PGL Wallachia%Season 11', leagueId: null, start: '2027-05-11', end: '2027-05-23', multiplier: 1 },
+  { key: 'ti2027', name: 'The International 2027', lp: 'The_International/2027', find: 'The International 2027', leagueId: null, start: null, end: null, multiplier: 3 },
 ];
 
 // Force a player's role when Valve's role and the automatic guess are both wrong.

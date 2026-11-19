@@ -126,6 +126,7 @@ export default function TeamBuilder(p: Props) {
         if (data.penalty) parts.push(`${data.penalty} points taken off for extra transfers.`);
         if (grind && data.coins != null) parts.push(`${data.coins} coins left.`);
         setMsg({ ok: true, text: parts.join(' ') });
+        router.push(`/team?mode=${p.mode}`);
         router.refresh();
       } else setMsg({ ok: false, text: data.error || 'The squad was not saved. Try again.' });
     } catch {

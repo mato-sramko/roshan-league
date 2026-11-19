@@ -173,3 +173,63 @@ body:has(.modeframe) .top { border-bottom-color: var(--accent); }
 .modes li.casual { border-left-color: var(--radiant); }
 .modes li.grind { border-left-color: var(--dire); }
 @media (max-width: 719px) { .modeframe { border-width: 3px; } .modeframe span { display: none; } }
+
+/* Squad overview (My team with a saved squad) */
+.dash { background: var(--paper); border: 2px solid var(--edge); border-radius: 12px; padding: 14px 16px; margin: 6px 0 8px; }
+.dash .headline { font-size: 1.02rem; }
+.dash .headline b { font-family: var(--display); font-size: 1.15rem; }
+.dash .stats { display: flex; flex-wrap: wrap; gap: 10px 28px; margin: 12px 0 10px; }
+.dash .stats > div { display: flex; flex-direction: column; min-width: 7rem; }
+.dash .stats .k { font-size: 0.8rem; font-weight: 600; color: var(--muted); }
+.dash .stats b { font-family: var(--display); font-size: 2rem; line-height: 1.05; font-stretch: 85%; }
+.dash .actions { justify-content: space-between; border-top: 1px solid var(--line); padding-top: 10px; }
+.pill { font-size: 0.75rem; font-weight: 700; padding: 0 7px; border-radius: 99px; border: 1.5px solid var(--edge); white-space: nowrap; line-height: 1.6; }
+.pill.ok { border-color: var(--radiant); color: var(--radiant); }
+.pill.bad { border-color: var(--ember); color: var(--ember); }
+.pill.dim { color: var(--muted); }
+.pill.gold { background: var(--aegis); border-color: var(--aegis); color: #1a1408; }
+
+.sched { list-style: none; padding: 0; margin: 0; border: 2px solid var(--edge); border-radius: 10px; background: var(--paper); overflow: hidden; }
+.sched li { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); align-items: center; }
+.sched li:last-child { border-bottom: 0; }
+.sched li.live { background: rgba(208, 80, 60, 0.10); }
+.sched .when { grid-column: 1 / -1; display: flex; gap: 8px; align-items: baseline; font-weight: 600; }
+.sched .vs { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; }
+.sched .tm { display: flex; flex-direction: column; line-height: 1.25; }
+.sched .tm:last-child { text-align: right; }
+.sched .tm.ours > span:first-child { font-weight: 700; }
+.sched .tm .small { color: var(--aegis); font-weight: 600; }
+@media (min-width: 720px) {
+  .sched li { grid-template-columns: 11rem 1fr auto; }
+  .sched .when { grid-column: auto; flex-direction: column; gap: 0; }
+}
+
+.pls { list-style: none; padding: 0; margin: 0 0 6px; display: grid; gap: 8px; }
+.pl { background: var(--paper); border: 2px solid var(--edge); border-left-width: 8px; border-radius: 10px; }
+.pl.core { border-left-color: var(--core); }
+.pl.mid { border-left-color: var(--mid); }
+.pl.support { border-left-color: var(--support); }
+.pl.bench { background: transparent; border-style: dashed; border-left-style: solid; }
+.pl summary { list-style: none; display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; cursor: pointer; }
+.pl summary::-webkit-details-marker { display: none; }
+.pl .pinfo { display: flex; flex-direction: column; min-width: 0; }
+.pl .nm { font-family: var(--display); font-weight: 700; font-size: 1.15rem; line-height: 1.15; overflow-wrap: anywhere; }
+.pl .pts { display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
+.pl .pts b { font-family: var(--display); font-size: 1.6rem; line-height: 1.05; }
+.pl details[open] summary { border-bottom: 1px solid var(--line); }
+.pl .more { padding: 10px 12px 12px; }
+.pl h4 { font-size: 0.8rem; font-weight: 700; color: var(--muted); margin: 12px 0 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+.src, .games { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; max-width: 520px; }
+.src li { display: grid; grid-template-columns: 6.5rem 1fr 3.5rem; gap: 8px; align-items: center; font-size: 0.92rem; }
+.src .bar { height: 10px; background: var(--well); border-radius: 5px; overflow: hidden; }
+.src .bar i { display: block; height: 100%; background: var(--aegis); }
+.src .bar i.neg { background: var(--ember); }
+.r { text-align: right; }
+.games li { display: grid; grid-template-columns: 8.5rem 1fr 3.5rem; gap: 8px; font-size: 0.92rem; align-items: baseline; }
+.games b.w { color: var(--radiant); }
+.games b.l { color: var(--ember); }
+details.settings { margin-top: 40px; color: var(--muted); }
+details.settings summary { cursor: pointer; margin-bottom: 10px; }
+.sched li.morem { display: block; padding: 0; }
+.sched li.morem summary { cursor: pointer; padding: 8px 12px; color: var(--muted); font-weight: 600; }
+.sched.inner { border: 0; border-top: 1px solid var(--line); border-radius: 0; }

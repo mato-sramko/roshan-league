@@ -3,7 +3,7 @@
 // a player's first match for the new team. Without LIQUIPEDIA_API_KEY nothing changes and the site
 // runs on OpenDota alone. If Liquipedia stops answering, its data is used for 3 more days, then
 // OpenDota takes over again (see the lp_at checks in opendota.ts).
-import { q, now } from './db';
+import { q, tx, now, dayStart, dayEnd } from './db';
 
 const BASE = 'https://api.liquipedia.net/api/v3';
 
@@ -32,6 +32,21 @@ async function all(type: string, params: Record<string, string | number>): Promi
 }
 
 const norm = (page: string) => page.trim().replace(/ /g, '_').toLowerCase();
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// One short form for a team, so a Liquipedia page ("LEGION_(team)"), a Liquipedia display name
+// ("LEGION (team)") and an OpenDota name ("Team LEGION") all come out the same: "legion".
+export function teamKey(name: string | null | undefined): string {
+  return String(name ?? '')
+    .replace(/_/g, ' ')
+    .replace(/\s*\(.*?\)\s*$/, '')
+    .toLowerCase()
+    .replace(/^team\s+/, '')
+    .replace(/\s+(team|gaming|esports)$/, '')
+    .replace(/[^a-z0-9]+/g, '');
+}
+const teamName = (page: string) => page.replace(/_/g, ' ').replace(/\s*\(.*\)$/, '').trim();
+const isDate = (d: unknown): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && !/-00/.test(d);
 
 export type LpReport = { squads: number; moved: number };
 
@@ -80,38 +95,163 @@ export async function refreshRosters(): Promise<LpReport> {
     const v = votes.get(e.team) ?? votes.set(e.team, new Map()).get(e.team)!;
     v.set(od, (v.get(od) ?? 0) + 1);
   }
-  const teamKey = new Map<string, string>();
+  const odKey = new Map<string, string>();
   const usedKeys = new Set<string>();
   for (const [team, v] of [...votes].sort((a, b) => Math.max(...b[1].values()) - Math.max(...a[1].values()))) {
     const best = [...v].sort((a, b) => b[1] - a[1])[0];
     if (best && best[1] >= 2 && !usedKeys.has(best[0])) {
-      teamKey.set(team, best[0]);
+      odKey.set(team, best[0]);
       usedKeys.add(best[0]);
     }
   }
   const nameOf = (page: string) => page.replace(/_/g, ' ').replace(/\s*\(.*\)$/, '');
 
   const t = now();
-  const rows: [string, string | null, string | null, number | null][] = [];
+  const rows: [string, string | null, string | null, number | null, string][] = [];
   let moved = 0;
   for (const [id, e] of entries) {
-    const key = teamKey.get(e.team) ?? `lp:${e.team}`;
+    const key = odKey.get(e.team) ?? `lp:${e.team}`;
     if (ours.get(id)!.team_id !== key) moved++;
-    rows.push([id, key, nameOf(e.team), e.pos]);
+    rows.push([id, key, nameOf(e.team), e.pos, teamKey(e.team)]);
   }
   for (let i = 0; i < rows.length; i += 200) {
     const chunk = rows.slice(i, i + 200);
     const vals: any[] = [t];
     const tuples = chunk.map((r, j) => {
       vals.push(...r);
-      const n = 1 + j * 4;
-      return `($${n + 1}::text, $${n + 2}::text, $${n + 3}::text, $${n + 4}::int)`;
+      const n = 1 + j * 5;
+      return `($${n + 1}::text, $${n + 2}::text, $${n + 3}::text, $${n + 4}::int, $${n + 5}::text)`;
     });
     await q(
-      `UPDATE pro_players p SET team_id = v.tid, team_name = v.tname, lp_pos = v.pos, lp_at = $1
-       FROM (VALUES ${tuples.join(',')}) AS v(id, tid, tname, pos) WHERE p.account_id = v.id`,
+      `UPDATE pro_players p SET team_id = v.tid, team_name = v.tname, lp_pos = v.pos, lp_team = v.lt, lp_at = $1
+       FROM (VALUES ${tuples.join(',')}) AS v(id, tid, tname, pos, lt) WHERE p.account_id = v.id`,
       vals,
     );
   }
   return { squads: entries.size, moved };
+}
+
+
+// ---------------------------------------------------------------------------
+// Tournaments: dates, league id and invited teams, for every event with an `lp` page in season.config.ts.
+// ---------------------------------------------------------------------------
+
+export type TourReport = { dated: string[]; ids: string[]; teams: number };
+
+export async function refreshTournaments(): Promise<TourReport> {
+  const evs = await q(`SELECT key, lp_page, league_id, ends_at, lp_end FROM events WHERE lp_page IS NOT NULL ORDER BY sort`);
+  const report: TourReport = { dated: [], ids: [], teams: 0 };
+  if (!evs.length) return report;
+  const byPage = new Map(evs.map((e) => [norm(e.lp_page), e]));
+  const cond = (field: string, list: any[]) => list.map((e) => `[[${field}::${String(e.lp_page).replace(/[\[\]|]/g, '')}]]`).join(' OR ');
+
+  const tours = await lp('tournament', { conditions: cond('pagename', evs), query: 'pagename,startdate,enddate,extradata', limit: 100 });
+  for (const r of tours) {
+    const e = byPage.get(norm(r.pagename));
+    if (!e) continue;
+    const start = isDate(r.startdate) ? dayStart(r.startdate) : null;
+    const end = isDate(r.enddate) ? dayEnd(r.enddate) : null;
+    const lid = /^\d+$/.test(String(r.extradata?.leagueid ?? '')) ? Number(r.extradata.leagueid) : null;
+    await q(`UPDATE events SET lp_start = $2, lp_end = $3, league_id = COALESCE(league_id, $4) WHERE key = $1`, [
+      e.key,
+      start != null && end != null ? start : null,
+      start != null && end != null ? end : null,
+      lid,
+    ]);
+    if (start != null && end != null) report.dated.push(e.key);
+    if (lid != null && e.league_id == null) report.ids.push(`${e.key}=${lid}`);
+  }
+
+  // Invited and qualified teams of tournaments that are not long over. Liquipedia lists them as
+  // placements; a placement ("13-16") appears once the team is out.
+  const t = now();
+  const open = evs.filter((e) => (e.lp_end ?? e.ends_at) == null || (e.lp_end ?? e.ends_at) > t - 3 * 86400);
+  if (!open.length) return report;
+  await sleep(2000);
+  const rows = await lp('placement', { conditions: cond('parent', open), query: 'parent,opponentname,placement', limit: 1000 });
+  const per = new Map<string, Map<string, [string, string | null]>>();
+  for (const r of rows) {
+    const e = byPage.get(norm(r.parent));
+    const name = String(r.opponentname ?? '').trim();
+    if (!e || !name || /^tbd$/i.test(name)) continue;
+    const m = per.get(e.key) ?? per.set(e.key, new Map()).get(e.key)!;
+    m.set(teamKey(name), [teamName(name), String(r.placement ?? '').trim() || null]);
+  }
+  await tx(async (query) => {
+    for (const [key, teams] of per) {
+      await query(`DELETE FROM event_teams WHERE event_key = $1`, [key]);
+      for (const [team, [name, place]] of teams) {
+        await query(`INSERT INTO event_teams (event_key, team, name, place) VALUES ($1, $2, $3, $4)`, [key, team, name, place]);
+        report.teams++;
+      }
+    }
+  });
+  return report;
+}
+
+// ---------------------------------------------------------------------------
+// Match schedule of tournaments that are on now or start within two weeks.
+// ---------------------------------------------------------------------------
+
+function streamUrl(s: any): string | null {
+  if (!s || typeof s !== 'object') return null;
+  const tw = s.twitch_en_1 || s.twitch;
+  if (tw) return `https://www.twitch.tv/${encodeURIComponent(tw)}`;
+  const kick = s.kick_en_1 || s.kick;
+  if (kick) return `https://kick.com/${encodeURIComponent(kick)}`;
+  return null;
+}
+
+export async function refreshMatches(events: { key: string; lp_page: string | null }[]): Promise<number> {
+  const evs = events.filter((e) => e.lp_page);
+  if (!evs.length) return 0;
+  const byPage = new Map(evs.map((e) => [norm(e.lp_page!), e.key]));
+  const rows = await all('match', {
+    conditions: evs.map((e) => `[[parent::${e.lp_page!.replace(/[\[\]|]/g, '')}]]`).join(' OR '),
+    query: 'match2id,parent,date,dateexact,finished,bestof,section,winner,match2opponents,stream',
+    order: 'date ASC',
+  });
+  const per = new Map<string, any[][]>();
+  for (const r of rows) {
+    const key = byPage.get(norm(r.parent ?? ''));
+    const ts = Date.parse(String(r.date ?? '').replace(' ', 'T') + 'Z');
+    if (!key || !r.match2id || !Number.isFinite(ts)) continue;
+    const o = Array.isArray(r.match2opponents) ? r.match2opponents : [];
+    const side = (i: number) => {
+      const name = String(o[i]?.name ?? '').trim();
+      const known = name && !/^tbd$/i.test(name);
+      const score = Number(o[i]?.score);
+      return { key: known ? teamKey(name) : null, name: known ? teamName(name) : null, score: Number.isFinite(score) && score >= 0 ? score : null };
+    };
+    const a = side(0);
+    const b = side(1);
+    const w = Number(r.winner);
+    const list = per.get(key) ?? per.set(key, []).get(key)!;
+    list.push([
+      String(r.match2id), key, Math.floor(ts / 1000), Number(r.dateexact) === 1, Number(r.bestof) || null, String(r.section ?? '') || null,
+      a.key, b.key, a.name, b.name, a.score, b.score, w === 1 || w === 2 ? w : null, Number(r.finished) === 1, streamUrl(r.stream),
+    ]);
+  }
+  let n = 0;
+  await tx(async (query) => {
+    for (const [key, list] of per) {
+      await query(`DELETE FROM lp_matches WHERE event_key = $1`, [key]);
+      for (let i = 0; i < list.length; i += 100) {
+        const chunk = list.slice(i, i + 100);
+        const vals: any[] = [];
+        const tuples = chunk.map((r, j) => {
+          vals.push(...r);
+          const k = j * 15;
+          return `(${Array.from({ length: 15 }, (_, x) => `$${k + x + 1}`).join(',')})`;
+        });
+        await query(
+          `INSERT INTO lp_matches (id, event_key, ts, exact, bestof, section, team1, team2, name1, name2, score1, score2, winner, finished, stream)
+           VALUES ${tuples.join(',')} ON CONFLICT (id) DO NOTHING`,
+          vals,
+        );
+      }
+      n += list.length;
+    }
+  });
+  return n;
 }

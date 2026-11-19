@@ -6,10 +6,12 @@ import { q } from '@/lib/db';
 import { SEASON } from '@/season.config';
 import { rename } from '../actions';
 import TeamBuilder from './TeamBuilder';
+import SquadView from './SquadView';
+import { getDashboard } from '@/lib/live';
 
 export const metadata = { title: 'My team' };
 
-export default async function TeamPage({ searchParams }: { searchParams: Promise<{ mode?: string }> }) {
+export default async function TeamPage({ searchParams }: { searchParams: Promise<{ mode?: string; edit?: string }> }) {
   const sp = await searchParams;
   const mode = isMode(sp.mode) ? sp.mode : 'casual';
   const user = await getUser();
@@ -35,12 +37,26 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
 
   const events = await getEvents();
   const status = computeStatus(events);
-  const [players, squad, edit, points] = await Promise.all([
+  const [players, squad, edit, points, dash] = await Promise.all([
     getPlayers(),
     getSquad(user.id, mode),
     getEditMode(user.id, mode, status, events),
     computePoints(mode, [user.id]),
+    getDashboard(user.id, mode),
   ]);
+  // With a squad, the page shows how it is doing; the player list opens only to make changes.
+  const editing = !squad || sp.edit === '1';
+  const hasInactive = !!squad?.players.some((p) => p.inactive);
+  const editHref = edit.mode === 'locked' && !hasInactive ? null : `/team?mode=${mode}&edit=1`;
+  const editLabel = edit.mode === 'locked' ? 'Replace inactive player' : mode === 'grind' ? 'Trade players' : 'Transfers';
+  const editNote =
+    edit.mode === 'locked'
+      ? `Squads are locked until ${fmtDate(status.live?.ends_at ?? null)}.`
+      : edit.mode === 'free'
+        ? `Change anything for free${status.next ? ` until ${status.next.name} starts on ${fmtDate(status.next.starts_at)}` : ''}.`
+        : mode === 'grind'
+          ? `Transfer window open${status.next ? ` until ${fmtDate(status.next.starts_at)}` : ''}.`
+          : `Transfer window open${status.next ? ` until ${fmtDate(status.next.starts_at)}` : ''}: ${edit.freeLeft} of ${SEASON.casual.freeTransfersPerWindow} free transfers left.`;
   const total = points.get(user.id)?.total ?? 0;
   const penalties =
     mode === 'casual'
@@ -65,14 +81,23 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
             Grind
           </Link>
         </div>
-        <h1 className="page">{squad ? (mode === 'grind' ? 'Your grind squad' : 'Your squad') : mode === 'grind' ? 'Start a grind squad' : 'Build your squad'}</h1>
+        <h1 className="page">
+          {squad ? (editing ? (mode === 'grind' ? 'Trade players' : 'Transfers') : mode === 'grind' ? 'Your grind squad' : 'Your squad') : mode === 'grind' ? 'Start a grind squad' : 'Build your squad'}
+        </h1>
+        {editing && squad && (
+          <p>
+            <Link href={`/team?mode=${mode}`}>← Back to your squad</Link>
+          </p>
+        )}
+        {editing && (
         <p className="muted">
           {mode === 'grind'
             ? `Grind: start with ${SEASON.grind.start} coins, earn more after every tournament, buy and sell between tournaments.`
             : `Casual: ${SEASON.casual.budget.toLocaleString('en')} coins for the whole season and ${SEASON.casual.freeTransfersPerWindow} free transfers between tournaments.`}{' '}
           <Link href="/rules">Rules</Link>
         </p>
-        {squad && (
+        )}
+        {editing && squad && (
           <p className="lede">
             <b className="num">{fmtPts(total - penalties)}</b> points this season
             {penalties > 0 && <span className="muted"> (after {fmtPts(penalties)} in transfer penalties)</span>}
@@ -80,7 +105,9 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
         )}
       </section>
 
-      {players.length === 0 ? (
+      {!editing && dash ? (
+        <SquadView d={dash} mode={mode} editHref={editHref} editLabel={editLabel} editNote={editNote} coins={mode === 'grind' ? coins : null} />
+      ) : players.length === 0 ? (
         <p className="note">The player list is empty because no matches have been loaded yet. It fills itself the first time the match sync runs.</p>
       ) : (
         <TeamBuilder
@@ -145,11 +172,15 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
         </>
       )}
 
-      <h2>Your manager name</h2>
-      <form action={rename} className="row">
-        <input type="text" name="name" defaultValue={user.name} minLength={2} maxLength={30} aria-label="Manager name" required />
-        <button className="btn plain">Save name</button>
-      </form>
+      {!editing && (
+        <details className="settings">
+          <summary>Manager name: {user.name}</summary>
+          <form action={rename} className="row">
+            <input type="text" name="name" defaultValue={user.name} minLength={2} maxLength={30} aria-label="Manager name" required />
+            <button className="btn plain">Save name</button>
+          </form>
+        </details>
+      )}
     </>
   );
 }

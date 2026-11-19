@@ -15,10 +15,19 @@ export type Ev = {
   multiplier: number;
   sort: number;
   kind: 'main' | 'qualifier';
+  lp_page: string | null;
 };
 
+// Liquipedia dates win over season.config.ts when they are close to them (within 45 days),
+// so a typo there cannot move a tournament by months.
+const LP_DATE_SLACK = 45 * 86400;
 export async function getEvents(): Promise<Ev[]> {
-  return (await q(`SELECT * FROM events ORDER BY sort`)) as Ev[];
+  const rows = await q(`SELECT * FROM events ORDER BY sort`);
+  return rows.map((r) => {
+    const useLp = r.lp_start != null && r.lp_end != null && (r.starts_at == null || Math.abs(r.lp_start - r.starts_at) <= LP_DATE_SLACK);
+    const { lp_start, lp_end, ...rest } = r;
+    return { ...rest, starts_at: useLp ? lp_start : r.starts_at, ends_at: useLp ? lp_end : r.ends_at } as Ev;
+  });
 }
 
 export type Status = { live: Ev | null; next: Ev | null; windowKey: string };
@@ -83,7 +92,8 @@ export function sellPrice(buy: number | null, current: number): number {
 // ---------------------------------------------------------------------------
 
 type SlotRow = { id: number; user_id: number; account_id: string; bench: boolean; role: Role; from_ts: number; to_ts: number | null };
-export type UserPoints = { total: number; events: Map<string, number>; slots: Map<number, number> };
+// slotEvents: what each slot added to the squad in each tournament, `${slotId}|${eventKey}` (bench players only when they came in).
+export type UserPoints = { total: number; events: Map<string, number>; slots: Map<number, number>; slotEvents: Map<string, number> };
 
 function inList(start: number, n: number): string {
   return Array.from({ length: n }, (_, i) => `$${start + i}`).join(',');
@@ -128,7 +138,7 @@ export async function computePoints(mode: Mode, userIds?: number[]): Promise<Map
     byUser.get(s.user_id)!.push(s);
   }
   for (const [uid, list] of byUser) {
-    const up: UserPoints = { total: 0, events: new Map(), slots: new Map() };
+    const up: UserPoints = { total: 0, events: new Map(), slots: new Map(), slotEvents: new Map() };
     for (const e of events) {
       const held = list.filter((s) => s.from_ts <= e.ends_at! && (s.to_ts == null || s.to_ts > e.starts_at!));
       if (!held.length) continue;
@@ -152,7 +162,10 @@ export async function computePoints(mode: Mode, userIds?: number[]): Promise<Map
       if (!raw) continue;
       up.events.set(e.key, raw * e.multiplier);
       up.total += raw * e.multiplier;
-      for (const [id, p] of counted) up.slots.set(id, (up.slots.get(id) ?? 0) + p * e.multiplier);
+      for (const [id, p] of counted) {
+        up.slots.set(id, (up.slots.get(id) ?? 0) + p * e.multiplier);
+        up.slotEvents.set(`${id}|${e.key}`, p * e.multiplier);
+      }
     }
     out.set(uid, up);
   }

@@ -4,7 +4,7 @@ import { scorePlayer } from './scoring';
 import { getEvents, computeStatus, payGrindIncome, setSeasonPrices, priceNewcomers, seasonPricesDone, type Ev, type SeasonStat } from './game';
 import { SCORING, SEASON } from '@/season.config';
 import { pruneLimits } from './limit';
-import { refreshRosters, type LpReport } from './liquipedia';
+import { refreshRosters, refreshTournaments, refreshMatches, type LpReport, type TourReport } from './liquipedia';
 import { EVENTS } from '@/season.config';
 
 const BASE = process.env.OPENDOTA_BASE || 'https://api.opendota.com/api';
@@ -109,6 +109,8 @@ export type SyncReport = {
   prices: null | { priced: number; from: string };
   roles?: number;
   rosters?: LpReport;
+  tournaments?: TourReport;
+  schedule?: number;
   income?: string[];
   found?: string[];
   errors: string[];
@@ -124,7 +126,7 @@ export async function syncOnce(opts: { maxMatches?: number; budgetMs?: number; g
   const gap = opts.gapMs ?? 1100; // stay under OpenDota's 60 calls a minute
   const t = now();
   const report: SyncReport = { fetched: 0, left: 0, events: {}, prices: null, errors: [], ms: 0 };
-  const events = await getEvents();
+  let events = await getEvents();
 
   // Once a day: Valve's roles and current teams for the players we know.
   const rolesAt = Number((await q(`SELECT value FROM meta WHERE key = 'roles_at'`))[0]?.value ?? 0);
@@ -148,6 +150,35 @@ export async function syncOnce(opts: { maxMatches?: number; budgetMs?: number; g
       report.errors.push(String(err.message || err));
       await setMeta('lp_at', String(t - 5 * 3600)); // try again in about an hour
     }
+  }
+
+  // Liquipedia tournaments (dates, league ids, invited teams) every 6 hours, and the match schedule
+  // every run while a tournament is on or starts within two days, else every 6 hours.
+  if (process.env.LIQUIPEDIA_API_KEY) {
+    const tourAt = Number((await q(`SELECT value FROM meta WHERE key = 'lp_tour_at'`))[0]?.value ?? 0);
+    if (tourAt < t - 6 * 3600) {
+      try {
+        report.tournaments = await refreshTournaments();
+        await setMeta('lp_tour_at', String(t));
+      } catch (err: any) {
+        report.errors.push(String(err.message || err));
+        await setMeta('lp_tour_at', String(t - 5 * 3600));
+      }
+    }
+    const evs = (await getEvents()).filter(
+      (e) => e.lp_page && e.multiplier > 0 && e.starts_at != null && e.starts_at <= t + 14 * 86400 && (e.ends_at ?? 0) >= t - 86400,
+    );
+    const busy = evs.some((e) => e.starts_at! <= t + 2 * 86400);
+    const schedAt = Number((await q(`SELECT value FROM meta WHERE key = 'lp_sched_at'`))[0]?.value ?? 0);
+    if (evs.length && schedAt < t - (busy ? 20 * 60 : 6 * 3600)) {
+      try {
+        report.schedule = await refreshMatches(evs);
+        await setMeta('lp_sched_at', String(t));
+      } catch (err: any) {
+        report.errors.push(String(err.message || err));
+      }
+    }
+    events = await getEvents(); // Liquipedia may have set dates or league ids
   }
 
   // At most once an hour: look up league ids for upcoming tournaments that do not have one yet.
